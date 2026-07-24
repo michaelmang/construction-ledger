@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Decimal from "decimal.js";
 import { createProgressBilling } from "@/app/actions/billings";
 import { formatUSD } from "@/lib/money";
@@ -14,6 +15,7 @@ export function BillingForm({ jobId, retainagePct }: { jobId: number; retainageP
   const [billingDate, setBillingDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [periodLabel, setPeriodLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const computedRetainage = useMemo(() => {
@@ -47,8 +49,30 @@ export function BillingForm({ jobId, retainagePct }: { jobId: number; retainageP
       setSubmitting(false);
       return;
     }
+    if (result.warning) {
+      // Over-billing is allowed but the CFO needs to actually see this, so
+      // don't auto-navigate away from it.
+      setWarning(result.warning);
+      setSubmitting(false);
+      return;
+    }
     router.push(`/jobs/${jobId}/billings`);
     router.refresh();
+  }
+
+  if (warning) {
+    return (
+      <div className="max-w-lg space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-6">
+        <p className="text-sm font-medium text-amber-800">Progress billing created.</p>
+        <p className="text-sm text-amber-700">{warning}</p>
+        <Link
+          href={`/jobs/${jobId}/billings`}
+          className="inline-block text-sm font-medium text-amber-900 underline"
+        >
+          Continue to Billings
+        </Link>
+      </div>
+    );
   }
 
   return (

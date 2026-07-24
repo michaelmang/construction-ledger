@@ -33,7 +33,7 @@ function costByCostCode(jobCode: string, lines: BalanceLine[]): Map<string, Deci
   return map;
 }
 
-async function billedToDate(jobId: number): Promise<Decimal> {
+export async function billedToDate(jobId: number): Promise<Decimal> {
   const agg = await prisma.progressBilling.aggregate({
     where: { jobId },
     _sum: { amountBilled: true },
@@ -41,12 +41,19 @@ async function billedToDate(jobId: number): Promise<Decimal> {
   return toDecimal(agg._sum.amountBilled);
 }
 
-async function approvedChangeOrdersTotal(jobId: number): Promise<Decimal> {
+export async function approvedChangeOrdersTotal(jobId: number): Promise<Decimal> {
   const agg = await prisma.changeOrder.aggregate({
     where: { jobId, status: "approved" },
     _sum: { amount: true },
   });
   return toDecimal(agg._sum.amount);
+}
+
+// Contract value + approved change orders. Used both by the WIP schedule and
+// by the over-billing warning check in app/actions/billings.ts.
+export async function getRevisedContractValue(jobId: number): Promise<Decimal> {
+  const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
+  return toDecimal(job.contractValue).plus(await approvedChangeOrdersTotal(jobId));
 }
 
 async function jobBudgetsWithActuals(jobId: number, jobCode: string, costLines: BalanceLine[]) {

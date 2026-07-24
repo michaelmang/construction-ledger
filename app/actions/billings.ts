@@ -15,8 +15,23 @@ import { JournalValidationError } from "@/lib/journal";
 import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
 import { computeRetainageWithheld, BillingMathError } from "@/lib/billing-math";
+import { billedToDate, getRevisedContractValue } from "@/lib/reports";
 
 class ActionError extends Error {}
+
+// Over-billing (cumulative billed > revised contract value) is allowed, not
+// rejected — some CFOs bill ahead of an unapproved change order — but the
+// CFO should see it (product spec Phase 5: "allowed but warned").
+async function overBillingWarning(jobId: number, jobCode: string): Promise<string | undefined> {
+  const [billed, revisedContractValue] = await Promise.all([
+    billedToDate(jobId),
+    getRevisedContractValue(jobId),
+  ]);
+  if (billed.greaterThan(revisedContractValue)) {
+    return `Billed to date (${formatUSD(billed)}) now exceeds the revised contract value (${formatUSD(revisedContractValue)}) for ${jobCode}.`;
+  }
+  return undefined;
+}
 
 async function buildBillingEntry(
   jobId: number,
@@ -95,7 +110,7 @@ export async function createProgressBilling(
     });
 
     revalidatePath(`/jobs/${job.id}`);
-    return ok({ id: billing.id, txnid });
+    return ok({ id: billing.id, txnid }, await overBillingWarning(job.id, job.code));
   } catch (err) {
     return fail(actionErrorMessage(err));
   }
@@ -139,7 +154,7 @@ export async function editProgressBilling(
     });
 
     revalidatePath(`/jobs/${job.id}`);
-    return ok({ id: data.id, txnid: data.txnid });
+    return ok({ id: data.id, txnid: data.txnid }, await overBillingWarning(job.id, job.code));
   } catch (err) {
     return fail(actionErrorMessage(err));
   }

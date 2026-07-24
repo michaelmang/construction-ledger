@@ -242,4 +242,35 @@ describe("writeEntry / replaceEntry / deleteEntry", () => {
     const error = await check();
     expect(error).toBeNull();
   });
+
+  it("serializes concurrent writes without corrupting the journal", async () => {
+    const N = 25;
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        writeEntry({
+          date: "2026-08-01",
+          description: `Concurrent entry ${i}`,
+          tags: { seq: String(i) },
+          postings: [
+            { account: `expenses:jobs:J1:code${i}`, amount: new Decimal("1.00") },
+            { account: "liabilities:accounts payable:v", amount: new Decimal("-1.00") },
+          ],
+        }),
+      ),
+    );
+
+    const txnids = new Set(results.map((r) => r.txnid));
+    expect(txnids.size).toBe(N); // every txnid unique, no lost/duplicated writes
+
+    const year = await readFile(path.join(dir, "2026.journal"), "utf8");
+    const blocks = year.split(/\n\n+/).filter((b) => b.trim().length > 0);
+    expect(blocks).toHaveLength(N); // no interleaved/merged blocks
+
+    for (const r of results) {
+      expect(year).toContain(`txnid:${r.txnid}`);
+    }
+
+    const error = await check();
+    expect(error).toBeNull();
+  });
 });

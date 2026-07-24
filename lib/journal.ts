@@ -18,6 +18,21 @@ export interface EntryInput {
 
 export class JournalValidationError extends Error {}
 
+// Journal writes are read-modify-write against plain files (not a database
+// transaction), so two concurrent requests could interleave and corrupt the
+// block structure. Serialize all mutations through this in-process queue.
+// Sufficient for a single-user/single-process app (product spec §7/Phase 5);
+// a multi-instance deployment would need a real file lock instead.
+let writeQueue: Promise<unknown> = Promise.resolve();
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const result = writeQueue.then(fn, fn);
+  writeQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 function journalDir(): string {
   const dir = process.env.JOURNAL_DIR;
   if (!dir) throw new Error("JOURNAL_DIR environment variable is not set");
@@ -109,23 +124,25 @@ async function ensureJournalFiles(year: number): Promise<void> {
 // Every domain transaction maps to exactly one journal entry with a stable
 // txnid tag, so edits/deletes can find and replace the right entry instead of
 // appending corrections (product spec §4.6).
-export async function writeEntry(
+export function writeEntry(
   input: Omit<EntryInput, "tags"> & { tags?: Record<string, string> },
 ): Promise<{ txnid: string }> {
-  const txnid = input.tags?.txnid ?? randomUUID();
-  const tags = { ...input.tags, txnid };
-  const entry: EntryInput = { ...input, tags };
+  return serialized(async () => {
+    const txnid = input.tags?.txnid ?? randomUUID();
+    const tags = { ...input.tags, txnid };
+    const entry: EntryInput = { ...input, tags };
 
-  const text = formatEntry(entry);
-  const year = yearOf(entry.date);
-  await ensureJournalFiles(year);
+    const text = formatEntry(entry);
+    const year = yearOf(entry.date);
+    await ensureJournalFiles(year);
 
-  const yearPath = yearJournalPath(year);
-  const existing = await readFile(yearPath, "utf8");
-  const separator = existing.length === 0 ? "" : existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
-  await writeFile(yearPath, `${existing}${separator}${text}\n\n`, "utf8");
+    const yearPath = yearJournalPath(year);
+    const existing = await readFile(yearPath, "utf8");
+    const separator = existing.length === 0 ? "" : existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
+    await writeFile(yearPath, `${existing}${separator}${text}\n\n`, "utf8");
 
-  return { txnid };
+    return { txnid };
+  });
 }
 
 interface FoundEntry {
@@ -163,26 +180,30 @@ async function findEntryBlock(txnid: string): Promise<FoundEntry | null> {
   return null;
 }
 
-export async function replaceEntry(
+export function replaceEntry(
   txnid: string,
   input: Omit<EntryInput, "tags"> & { tags?: Record<string, string> },
 ): Promise<void> {
-  const found = await findEntryBlock(txnid);
-  if (!found) {
-    throw new JournalValidationError(`No journal entry found with txnid ${txnid}`);
-  }
-  const tags = { ...input.tags, txnid };
-  const newText = formatEntry({ ...input, tags });
-  found.blocks[found.index] = newText;
-  await writeFile(found.file, `${found.blocks.join("\n\n")}\n`, "utf8");
+  return serialized(async () => {
+    const found = await findEntryBlock(txnid);
+    if (!found) {
+      throw new JournalValidationError(`No journal entry found with txnid ${txnid}`);
+    }
+    const tags = { ...input.tags, txnid };
+    const newText = formatEntry({ ...input, tags });
+    found.blocks[found.index] = newText;
+    await writeFile(found.file, `${found.blocks.join("\n\n")}\n`, "utf8");
+  });
 }
 
-export async function deleteEntry(txnid: string): Promise<void> {
-  const found = await findEntryBlock(txnid);
-  if (!found) {
-    throw new JournalValidationError(`No journal entry found with txnid ${txnid}`);
-  }
-  found.blocks.splice(found.index, 1);
-  const content = found.blocks.length > 0 ? `${found.blocks.join("\n\n")}\n` : "";
-  await writeFile(found.file, content, "utf8");
+export function deleteEntry(txnid: string): Promise<void> {
+  return serialized(async () => {
+    const found = await findEntryBlock(txnid);
+    if (!found) {
+      throw new JournalValidationError(`No journal entry found with txnid ${txnid}`);
+    }
+    found.blocks.splice(found.index, 1);
+    const content = found.blocks.length > 0 ? `${found.blocks.join("\n\n")}\n` : "";
+    await writeFile(found.file, content, "utf8");
+  });
 }
