@@ -79,18 +79,28 @@ export interface BalanceLine {
   amount: Decimal;
 }
 
+export interface BalanceResult {
+  lines: BalanceLine[];
+  total: Decimal;
+}
+
 // Runs `hledger balance` scoped by an optional query (e.g. `tag:job=J2026-014`,
-// account name patterns). Returns per-account balances only, not the grand total.
-export async function balance(query: string[] = []): Promise<BalanceLine[]> {
+// account name patterns). `total` is hledger's own grand total for the query
+// (not a client-side sum of `lines`, which would double-count if a query ever
+// matched both a parent and its children).
+export async function balance(query: string[] = []): Promise<BalanceResult> {
   const raw = (await runHledgerJson(["balance", ...query])) as [
     [string, string, number, HledgerAmount[]][],
     HledgerAmount[],
   ];
-  const [lines] = raw;
-  return lines.map(([account, , , amounts]) => ({
-    account,
-    amount: amountToDecimal(amounts),
-  }));
+  const [lines, total] = raw;
+  return {
+    lines: lines.map(([account, , , amounts]) => ({
+      account,
+      amount: amountToDecimal(amounts),
+    })),
+    total: amountToDecimal(total),
+  };
 }
 
 export interface RegisterEntry {
