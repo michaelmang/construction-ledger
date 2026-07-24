@@ -5,78 +5,68 @@ import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
 import { ActionResult, ok, fail } from "@/lib/action-result";
 import {
-  recordExpenseSchema,
-  editExpenseSchema,
+  recordPaymentSchema,
+  editPaymentSchema,
   txnidSchema,
-  RecordExpenseInput,
-  EditExpenseInput,
+  RecordPaymentInput,
+  EditPaymentInput,
 } from "@/lib/validation";
-import { accountsPayable, expenseJobCostCode } from "@/lib/accounts";
+import { accountsReceivable, cash } from "@/lib/accounts";
 import { JournalValidationError } from "@/lib/journal";
 import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
 
-async function buildExpenseEntry(
+class ActionError extends Error {}
+
+async function buildPaymentEntry(
   jobId: number,
-  costCodeId: number,
-  vendor: string,
   amountStr: string,
   date: string,
-  description: string | undefined,
+  cashAccount: string | undefined,
+  memo: string | undefined,
 ) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) throw new ActionError(`Job ${jobId} not found`);
-  if (job.status === "archived") throw new ActionError(`Job ${job.code} is archived`);
-
-  const costCode = await prisma.costCode.findUnique({ where: { id: costCodeId } });
-  if (!costCode) throw new ActionError(`Cost code ${costCodeId} not found`);
 
   const amount = new Decimal(amountStr);
-  const vendorSlug = vendor.trim().toLowerCase();
+  const description = memo ? `Payment received - ${job.name} - ${memo}` : `Payment received - ${job.name}`;
 
   return {
     job,
-    costCode,
     amount,
     entry: {
-      kind: "expense" as const,
+      kind: "payment" as const,
       jobId: job.id,
       date,
-      description: description ? `${vendor} - ${description}` : vendor,
-      tags: { job: job.code, code: costCode.code },
+      description,
+      tags: { job: job.code, type: "payment" },
       postings: [
-        { account: expenseJobCostCode(job.code, costCode.code), amount },
-        { account: accountsPayable(vendorSlug), amount: amount.negated() },
+        { account: cash(cashAccount), amount },
+        { account: accountsReceivable(job.code), amount: amount.negated() },
       ],
       amount,
-      memo: `${vendor}${description ? " - " + description : ""}`,
+      memo,
     },
   };
 }
 
-class ActionError extends Error {}
-
-export async function recordExpense(
-  input: RecordExpenseInput,
+export async function recordPayment(
+  input: RecordPaymentInput,
 ): Promise<ActionResult<{ txnid: string }>> {
-  const parsed = recordExpenseSchema.safeParse(input);
+  const parsed = recordPaymentSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
 
   try {
-    const { job, costCode, amount, entry } = await buildExpenseEntry(
+    const { job, amount, entry } = await buildPaymentEntry(
       data.jobId,
-      data.costCodeId,
-      data.vendor,
       data.amount,
       data.date,
-      data.description,
+      data.cashAccount,
+      data.memo,
     );
 
-    const { txnid } = await recordTransaction(
-      entry,
-      `expense: ${job.code} ${costCode.code} ${formatUSD(amount)}`,
-    );
+    const { txnid } = await recordTransaction(entry, `payment: ${job.code} ${formatUSD(amount)}`);
 
     revalidatePath(`/jobs/${job.id}`);
     return ok({ txnid });
@@ -85,28 +75,23 @@ export async function recordExpense(
   }
 }
 
-export async function editExpense(
-  input: EditExpenseInput,
+export async function editPayment(
+  input: EditPaymentInput,
 ): Promise<ActionResult<{ txnid: string }>> {
-  const parsed = editExpenseSchema.safeParse(input);
+  const parsed = editPaymentSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
 
   try {
-    const { job, costCode, amount, entry } = await buildExpenseEntry(
+    const { job, amount, entry } = await buildPaymentEntry(
       data.jobId,
-      data.costCodeId,
-      data.vendor,
       data.amount,
       data.date,
-      data.description,
+      data.cashAccount,
+      data.memo,
     );
 
-    await updateTransaction(
-      data.txnid,
-      entry,
-      `edit expense: ${job.code} ${costCode.code} ${formatUSD(amount)}`,
-    );
+    await updateTransaction(data.txnid, entry, `edit payment: ${job.code} ${formatUSD(amount)}`);
 
     revalidatePath(`/jobs/${job.id}`);
     return ok({ txnid: data.txnid });
@@ -115,7 +100,7 @@ export async function editExpense(
   }
 }
 
-export async function deleteExpense(txnid: string): Promise<ActionResult<{ txnid: string }>> {
+export async function deletePayment(txnid: string): Promise<ActionResult<{ txnid: string }>> {
   const parsed = txnidSchema.safeParse(txnid);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
 
@@ -123,7 +108,7 @@ export async function deleteExpense(txnid: string): Promise<ActionResult<{ txnid
     const existing = await prisma.journalTxn.findUnique({ where: { txnid } });
     if (!existing) return fail(`No transaction found with txnid ${txnid}`);
 
-    await removeTransaction(txnid, `delete expense: ${existing.memo ?? txnid}`);
+    await removeTransaction(txnid, `delete payment: ${existing.memo ?? txnid}`);
 
     if (existing.jobId) revalidatePath(`/jobs/${existing.jobId}`);
     return ok({ txnid });

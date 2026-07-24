@@ -67,6 +67,13 @@ function amountToDecimal(amounts: HledgerAmount[]): Decimal {
   }, money(0));
 }
 
+// Note for every caller building a query array: hledger reserves the bare
+// `type:` prefix for account-type filters (A/L/E/R/X/C/V/G/U). Our journal
+// entries also carry a custom `type` tag (e.g. `type:progress-billing`, per
+// product spec §3.2) — to filter on it, use `tag:type=progress-billing`,
+// never `type:progress-billing` (that gets parsed as an account-type query
+// and fails).
+
 export interface BalanceLine {
   account: string;
   amount: Decimal;

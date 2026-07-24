@@ -10,6 +10,7 @@ import {
   replaceEntry,
   writeEntry,
 } from "@/lib/journal";
+import { check } from "@/lib/hledger";
 
 describe("formatEntry", () => {
   it("formats a balanced two-posting entry with tags", () => {
@@ -189,5 +190,56 @@ describe("writeEntry / replaceEntry / deleteEntry", () => {
     ).rejects.toThrow(JournalValidationError);
 
     await expect(deleteEntry("nonexistent")).rejects.toThrow(JournalValidationError);
+  });
+
+  it("keeps the journal parseable by real hledger after edit and delete (integration)", async () => {
+    const first = await writeEntry({
+      date: "2026-07-01",
+      description: "Keep me",
+      tags: { job: "J1" },
+      postings: [
+        { account: "expenses:jobs:J1:a", amount: new Decimal("10.00") },
+        { account: "liabilities:accounts payable:v", amount: new Decimal("-10.00") },
+      ],
+    });
+    const second = await writeEntry({
+      date: "2026-07-02",
+      description: "Edit me",
+      tags: { job: "J1" },
+      postings: [
+        { account: "expenses:jobs:J1:b", amount: new Decimal("20.00") },
+        { account: "liabilities:accounts payable:v", amount: new Decimal("-20.00") },
+      ],
+    });
+    const third = await writeEntry({
+      date: "2026-07-03",
+      description: "Delete me",
+      tags: { job: "J1" },
+      postings: [
+        { account: "expenses:jobs:J1:c", amount: new Decimal("30.00") },
+        { account: "liabilities:accounts payable:v", amount: new Decimal("-30.00") },
+      ],
+    });
+
+    await replaceEntry(second.txnid, {
+      date: "2026-07-02",
+      description: "Edited",
+      tags: { job: "J1" },
+      postings: [
+        { account: "expenses:jobs:J1:b", amount: new Decimal("25.00") },
+        { account: "liabilities:accounts payable:v", amount: new Decimal("-25.00") },
+      ],
+    });
+    await deleteEntry(third.txnid);
+
+    const year = await readFile(path.join(dir, "2026.journal"), "utf8");
+    const blocks = year.split(/\n\n+/).filter((b) => b.trim().length > 0);
+    expect(blocks).toHaveLength(2);
+    expect(year).toContain(`txnid:${first.txnid}`);
+    expect(year).toContain(`txnid:${second.txnid}`);
+    expect(year).not.toContain(third.txnid);
+
+    const error = await check();
+    expect(error).toBeNull();
   });
 });
