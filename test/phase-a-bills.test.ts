@@ -64,7 +64,8 @@ describe("Phase A: vendors, bills, pay-bill flow (v2 spec §F1/§F2/§F6/§F8/§
   });
 
   it("paying a bill in full reduces AP to zero and marks it paid", async () => {
-    const job = await createJob({ code: `PAB-${Date.now()}`, name: "Pay Bill Job" });
+    const jobCode = `PAB-${Date.now()}`;
+    const job = await createJob({ code: jobCode, name: "Pay Bill Job" });
     expect(job.ok).toBe(true);
     if (!job.ok) return;
     cleanupJobIds.push(job.data.id);
@@ -104,6 +105,14 @@ describe("Phase A: vendors, bills, pay-bill flow (v2 spec §F1/§F2/§F6/§F8/§
     const afterPartial = await prisma.bill.findUnique({ where: { id: bill!.id } });
     expect(afterPartial!.status).toBe("partial");
     expect(afterPartial!.paidAmount.toString()).toBe("2000");
+
+    // The bill payment should carry the job tag so it shows up in that job's
+    // Transactions tab, not just the vendor's bill list.
+    if (payment1.ok) {
+      const { print } = await import("@/lib/hledger");
+      const [entry] = await print([`tag:txnid=${payment1.data.txnid}`]);
+      expect(entry.tags.job).toBe(jobCode);
+    }
 
     // Pay the rest — should go to "paid"
     const payment2 = await payBill({ billId: bill!.id, amount: "3000.00", date: "2026-07-26" });

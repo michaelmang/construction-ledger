@@ -27,7 +27,10 @@ export async function payBill(input: PayBillInput): Promise<ActionResult<{ txnid
   const data = parsed.data;
 
   try {
-    const bill = await prisma.bill.findUnique({ where: { id: data.billId }, include: { vendor: true } });
+    const bill = await prisma.bill.findUnique({
+      where: { id: data.billId },
+      include: { vendor: true, job: true },
+    });
     if (!bill) throw new ActionError(`Bill ${data.billId} not found`);
 
     const amountDue = new Decimal(bill.amount)
@@ -51,7 +54,11 @@ export async function payBill(input: PayBillInput): Promise<ActionResult<{ txnid
         jobId: bill.jobId,
         date: data.date,
         description,
-        tags: { type: "bill-payment", vendor: vendorSlug },
+        tags: {
+          type: "bill-payment",
+          vendor: vendorSlug,
+          ...(bill.job ? { job: bill.job.code } : {}),
+        },
         postings: [
           { account: accountsPayable(vendorSlug), amount: paymentAmount },
           { account: cash(cashAccount), amount: paymentAmount.negated() },
