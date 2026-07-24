@@ -42,6 +42,18 @@ async function main() {
     create: { jobId: job.id, costCodeId: carpentry.id, budgetedAmount: "38000.00" },
   });
 
+  await prisma.vendor.upsert({
+    where: { name: "Ace Concrete Supply" },
+    update: {},
+    create: { name: "Ace Concrete Supply" },
+  });
+
+  await prisma.cashAccount.upsert({
+    where: { name: "checking" },
+    update: {},
+    create: { name: "checking", label: "Operating Checking", isDefault: true },
+  });
+
   console.log(`Seeded job ${job.code} with cost codes ${concrete.code}, ${carpentry.code}`);
 }
 

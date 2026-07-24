@@ -5,11 +5,26 @@ import { useRouter } from "next/navigation";
 import { recordPayment } from "@/app/actions/payments";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 
-export function PaymentForm({ jobId }: { jobId: number }) {
+interface CashAccountOption {
+  name: string;
+  label: string;
+  isDefault: boolean;
+}
+
+export function PaymentForm({
+  jobId,
+  cashAccounts,
+}: {
+  jobId: number;
+  cashAccounts: CashAccountOption[];
+}) {
   const router = useRouter();
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [memo, setMemo] = useState("");
+  const [cashAccount, setCashAccount] = useState(
+    () => cashAccounts.find((a) => a.isDefault)?.name ?? cashAccounts[0]?.name ?? "checking",
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -17,7 +32,13 @@ export function PaymentForm({ jobId }: { jobId: number }) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    const result = await recordPayment({ jobId, amount, date, memo: memo || undefined });
+    const result = await recordPayment({
+      jobId,
+      amount,
+      date,
+      cashAccount,
+      memo: memo || undefined,
+    });
     if (!result.ok) {
       setError(result.error);
       setSubmitting(false);
@@ -55,6 +76,19 @@ export function PaymentForm({ jobId }: { jobId: number }) {
           onChange={(e) => setDate(e.target.value)}
           required
         />
+      </Field>
+      <Field label="Deposit To">
+        <select className={inputClass} value={cashAccount} onChange={(e) => setCashAccount(e.target.value)}>
+          {cashAccounts.length === 0 ? (
+            <option value="checking">Checking</option>
+          ) : (
+            cashAccounts.map((a) => (
+              <option key={a.name} value={a.name}>
+                {a.label}
+              </option>
+            ))
+          )}
+        </select>
       </Field>
       <Field label="Memo" hint="optional">
         <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />

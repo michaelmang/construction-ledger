@@ -12,7 +12,7 @@ import {
   accountsReceivable,
   expenseJobCostCode,
   incomeJob,
-  retainagePayable,
+  retainageReceivable,
 } from "@/lib/accounts";
 import {
   getWipSchedule,
@@ -115,7 +115,10 @@ describe("reports (integration, hermetic fixture)", () => {
 
     const amountBilled = new Decimal("35000.00");
     const retainageWithheld = new Decimal("3500.00");
-    const earnedNet = amountBilled.minus(retainageWithheld);
+    const netBilled = amountBilled.minus(retainageWithheld);
+    // Retainage withheld by the client is receivable to us (an asset), not
+    // payable (v2 spec §F1). AR carries only the net; income recognizes the
+    // full billed amount.
     const t3 = await recordTransaction(
       {
         kind: "progress-billing",
@@ -124,9 +127,9 @@ describe("reports (integration, hermetic fixture)", () => {
         description: "Progress billing - fixture",
         tags: { job: jobCode, type: "progress-billing" },
         postings: [
-          { account: accountsReceivable(jobCode), amount: amountBilled },
-          { account: retainagePayable(jobCode), amount: retainageWithheld.negated() },
-          { account: incomeJob(jobCode), amount: earnedNet.negated() },
+          { account: accountsReceivable(jobCode), amount: netBilled },
+          { account: retainageReceivable(jobCode), amount: retainageWithheld },
+          { account: incomeJob(jobCode), amount: amountBilled.negated() },
         ],
         amount: amountBilled,
       },
@@ -186,11 +189,13 @@ describe("reports (integration, hermetic fixture)", () => {
     expect(carpentry.remaining.toFixed(2)).toBe("15000.00");
   });
 
-  it("reports retainage payable balance and days outstanding", async () => {
+  it("reports retainage receivable balance (client-withheld) and days outstanding", async () => {
     const asOf = new Date("2026-07-24T00:00:00Z");
     const report = await getRetainageAging(jobId, asOf);
-    expect(report.retainagePayableBalance.toFixed(2)).toBe("3500.00");
-    expect(report.retainageReceivableBalance.toFixed(2)).toBe("0.00");
+    // No sub-side retainage withheld in this fixture (expenses don't withhold).
+    expect(report.retainagePayableBalance.toFixed(2)).toBe("0.00");
+    // Client withheld 3,500 on the progress billing -> receivable to us.
+    expect(report.retainageReceivableBalance.toFixed(2)).toBe("3500.00");
     expect(report.billings).toHaveLength(1);
     expect(report.billings[0].retainageWithheld.toFixed(2)).toBe("3500.00");
     expect(report.billings[0].daysOutstanding).toBe(30);
@@ -198,8 +203,10 @@ describe("reports (integration, hermetic fixture)", () => {
 
   it("returns a whole-business cash position via a thin hledger wrapper", async () => {
     const cash = await getCashPosition();
-    // assets 35,000 (AR) + liabilities (-10,000 -20,000 -3,500 = -33,500) = 1,500
-    expect(cash.total.toFixed(2)).toBe("1500.00");
+    // assets: AR net 31,500 + retainage receivable 3,500 = 35,000
+    // liabilities: two vendor bills -10,000 -20,000 = -30,000
+    // total = 35,000 - 30,000 = 5,000
+    expect(cash.total.toFixed(2)).toBe("5000.00");
     expect(cash.lines.some((l) => l.account === accountsReceivable(jobCode))).toBe(true);
   });
 });

@@ -14,11 +14,13 @@ import { prisma } from "@/lib/db";
 import { createJob } from "@/app/actions/jobs";
 import { recordExpense } from "@/app/actions/expenses";
 import { createProgressBilling } from "@/app/actions/billings";
+import { createVendor } from "@/app/actions/vendors";
 
 describe("action edge cases (Phase 5 hardening)", () => {
   let journalDir: string;
   const createdJobIds: number[] = [];
   const createdCostCodeIds: number[] = [];
+  const createdVendorIds: number[] = [];
 
   beforeAll(async () => {
     journalDir = await mkdtemp(path.join(tmpdir(), "edge-case-test-"));
@@ -28,12 +30,16 @@ describe("action edge cases (Phase 5 hardening)", () => {
 
   afterEach(async () => {
     for (const jobId of createdJobIds.splice(0)) {
+      await prisma.bill.deleteMany({ where: { jobId } });
       await prisma.journalTxn.deleteMany({ where: { jobId } });
       await prisma.progressBilling.deleteMany({ where: { jobId } });
       await prisma.job.delete({ where: { id: jobId } }).catch(() => {});
     }
     for (const id of createdCostCodeIds.splice(0)) {
       await prisma.costCode.delete({ where: { id } }).catch(() => {});
+    }
+    for (const id of createdVendorIds.splice(0)) {
+      await prisma.vendor.delete({ where: { id } }).catch(() => {});
     }
   });
 
@@ -67,10 +73,15 @@ describe("action edge cases (Phase 5 hardening)", () => {
     });
     createdCostCodeIds.push(costCode.id);
 
+    const vendorResult = await createVendor({ name: `Edge Vendor ${Date.now()}` });
+    expect(vendorResult.ok).toBe(true);
+    if (!vendorResult.ok) return;
+    createdVendorIds.push(vendorResult.data.id);
+
     const result = await recordExpense({
       jobId: jobResult.data.id,
       costCodeId: costCode.id,
-      vendor: "Some Vendor",
+      vendorId: vendorResult.data.id,
       amount: "100.00",
       date: "2026-07-24",
     });

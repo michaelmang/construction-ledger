@@ -10,7 +10,7 @@ import {
   CreateProgressBillingInput,
   EditProgressBillingInput,
 } from "@/lib/validation";
-import { accountsReceivable, incomeJob, retainagePayable } from "@/lib/accounts";
+import { accountsReceivable, incomeJob, retainageReceivable } from "@/lib/accounts";
 import { JournalValidationError } from "@/lib/journal";
 import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
@@ -50,11 +50,17 @@ async function buildBillingEntry(
     retainageWithheldStr !== undefined ? new Decimal(retainageWithheldStr) : undefined,
   );
 
-  const earnedNet = amountBilled.minus(retainageWithheld);
+  const netBilled = amountBilled.minus(retainageWithheld);
   const description = periodLabel
     ? `Progress billing - ${job.name} - ${periodLabel}`
     : `Progress billing - ${job.name}`;
 
+  // Retainage a client withholds from our pay app is money owed TO us — an
+  // asset (retainage receivable), not a liability. AR only carries the net
+  // amount actually due now; the withheld portion sits in retainage
+  // receivable until released. Income is recognized on the full billed
+  // amount (v2 spec §F1 — v1 booked this as a liability and overstated AR by
+  // debiting the gross amount while only crediting income the net).
   return {
     job,
     amountBilled,
@@ -66,9 +72,9 @@ async function buildBillingEntry(
       description,
       tags: { job: job.code, type: "progress-billing" },
       postings: [
-        { account: accountsReceivable(job.code), amount: amountBilled },
-        { account: retainagePayable(job.code), amount: retainageWithheld.negated() },
-        { account: incomeJob(job.code), amount: earnedNet.negated() },
+        { account: accountsReceivable(job.code), amount: netBilled },
+        { account: retainageReceivable(job.code), amount: retainageWithheld },
+        { account: incomeJob(job.code), amount: amountBilled.negated() },
       ],
       amount: amountBilled,
       memo: periodLabel,

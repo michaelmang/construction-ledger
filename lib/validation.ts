@@ -53,8 +53,9 @@ export type SetBudgetInput = z.infer<typeof setBudgetSchema>;
 export const recordExpenseSchema = z.object({
   jobId: z.number().int().positive(),
   costCodeId: z.number().int().positive(),
-  vendor: z.string().min(1, "Vendor is required"),
+  vendorId: z.number().int().positive(),
   amount: positiveDecimalAmount,
+  retainageWithheld: nonNegativeDecimalAmount.optional(), // withheld from this sub's bill (v2 spec §F1)
   date: isoDate,
   description: z.string().optional(),
 });
@@ -62,6 +63,43 @@ export type RecordExpenseInput = z.infer<typeof recordExpenseSchema>;
 
 export const editExpenseSchema = recordExpenseSchema.extend({ txnid: txnidSchema });
 export type EditExpenseInput = z.infer<typeof editExpenseSchema>;
+
+export const recordOverheadExpenseSchema = z.object({
+  vendorId: z.number().int().positive(),
+  overheadCategoryId: z.number().int().positive(),
+  amount: positiveDecimalAmount,
+  date: isoDate,
+  description: z.string().optional(),
+});
+export type RecordOverheadExpenseInput = z.infer<typeof recordOverheadExpenseSchema>;
+
+export const createVendorSchema = z.object({
+  name: z.string().min(1, "Vendor name is required"),
+});
+export type CreateVendorInput = z.infer<typeof createVendorSchema>;
+
+export const createOverheadCategorySchema = z.object({
+  code: z.string().min(1, "Category code is required"),
+  name: z.string().min(1, "Category name is required"),
+});
+export type CreateOverheadCategoryInput = z.infer<typeof createOverheadCategorySchema>;
+
+export const createCashAccountSchema = z.object({
+  name: z.string().min(1, "Account slug is required"),
+  label: z.string().min(1, "Account label is required"),
+  isDefault: z.boolean().optional(),
+  openingBalance: decimalAmount.optional(),
+  openingDate: isoDate.optional(),
+});
+export type CreateCashAccountInput = z.infer<typeof createCashAccountSchema>;
+
+export const payBillSchema = z.object({
+  billId: z.number().int().positive(),
+  amount: positiveDecimalAmount,
+  date: isoDate,
+  cashAccount: z.string().min(1).optional(),
+});
+export type PayBillInput = z.infer<typeof payBillSchema>;
 
 export const recordPaymentSchema = z.object({
   jobId: z.number().int().positive(),

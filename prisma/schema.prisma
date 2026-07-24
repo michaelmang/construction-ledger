@@ -27,6 +27,7 @@ model Job {
   budgets      JobBudget[]
   changeOrders ChangeOrder[]
   billings     ProgressBilling[]
+  bills        Bill[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -39,6 +40,7 @@ model CostCode {
   csiDivision String?
 
   budgets JobBudget[]
+  bills   Bill[]
 }
 
 model JobBudget {
@@ -89,9 +91,77 @@ model JournalTxn {
   id        Int      @id @default(autoincrement())
   txnid     String   @unique
   jobId     Int?
-  kind      String // expense | payment | progress-billing
+  kind      String // expense | payment | progress-billing | bill-payment | overhead-expense | opening-balance
   date      DateTime
   amount    Decimal
   memo      String?
+  createdAt DateTime @default(now())
+}
+
+model Vendor {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  bills Bill[]
+}
+
+model OverheadCategory {
+  id   Int    @id @default(autoincrement())
+  code String @unique // e.g. "OFFICE", "INSURANCE", "FUEL"
+  name String
+
+  bills Bill[]
+}
+
+// A cash-holding account (checking, savings...). Opening balances are posted
+// as a real journal entry against equity:opening balances so the dashboard's
+// cash position reflects actual bank reality, not just journal activity
+// since the app was set up (v2 spec §F8).
+model CashAccount {
+  id             Int       @id @default(autoincrement())
+  name           String    @unique // short slug used in the hledger account path, e.g. "checking"
+  label          String // display label, e.g. "Operating Checking"
+  isDefault      Boolean   @default(false)
+  openingBalance Decimal   @default(0)
+  openingDate    DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+// A vendor bill (job-cost or overhead). Created alongside the expense journal
+// entry; tracks what's still owed so AP can actually be paid down (v2 spec
+// §F2/§F6) instead of only ever growing.
+model Bill {
+  id                 Int       @id @default(autoincrement())
+  vendorId           Int
+  jobId              Int?
+  costCodeId         Int?
+  overheadCategoryId Int?
+  amount             Decimal
+  retainageWithheld  Decimal   @default(0) // withheld from this sub's bill, owed back later
+  paidAmount         Decimal   @default(0)
+  status             String    @default("open") // open | partial | paid
+  date               DateTime
+  description        String?
+  txnid              String    @unique // the expense journal entry that created this bill
+
+  vendor           Vendor            @relation(fields: [vendorId], references: [id])
+  job              Job?              @relation(fields: [jobId], references: [id])
+  costCode         CostCode?         @relation(fields: [costCodeId], references: [id])
+  overheadCategory OverheadCategory? @relation(fields: [overheadCategoryId], references: [id])
+  payments         BillPayment[]
+
+  createdAt DateTime @default(now())
+}
+
+model BillPayment {
+  id     Int      @id @default(autoincrement())
+  billId Int
+  amount Decimal
+  date   DateTime
+  txnid  String   @unique // the payment journal entry
+
+  bill Bill @relation(fields: [billId], references: [id])
+
   createdAt DateTime @default(now())
 }

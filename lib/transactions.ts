@@ -3,7 +3,13 @@ import { prisma } from "./db";
 import { writeEntry, replaceEntry, deleteEntry, Posting } from "./journal";
 import { commitJournalChanges } from "./journal-git";
 
-export type TransactionKind = "expense" | "payment" | "progress-billing";
+export type TransactionKind =
+  | "expense"
+  | "payment"
+  | "progress-billing"
+  | "bill-payment"
+  | "overhead-expense"
+  | "opening-balance";
 
 export interface TransactionEntry {
   kind: TransactionKind;

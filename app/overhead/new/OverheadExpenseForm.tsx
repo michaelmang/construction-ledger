@@ -2,33 +2,29 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { recordExpense } from "@/app/actions/expenses";
+import { recordOverheadExpense } from "@/app/actions/overhead";
 import { createVendor } from "@/app/actions/vendors";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 import { VendorPicker, VendorOption } from "@/components/VendorPicker";
 
-interface CostCodeOption {
+interface CategoryOption {
   id: number;
   code: string;
   name: string;
 }
 
-export function ExpenseForm({
-  jobId,
-  costCodes,
+export function OverheadExpenseForm({
   vendors,
+  categories,
 }: {
-  jobId: number;
-  costCodes: CostCodeOption[];
   vendors: VendorOption[];
+  categories: CategoryOption[];
 }) {
   const router = useRouter();
   const [vendorSelection, setVendorSelection] = useState<number | "new" | "">("");
   const [newVendorName, setNewVendorName] = useState("");
-  const [costCodeId, setCostCodeId] = useState<number | "">("");
+  const [categoryId, setCategoryId] = useState<number | "">("");
   const [amount, setAmount] = useState("");
-  const [withholdRetainage, setWithholdRetainage] = useState(false);
-  const [retainageWithheld, setRetainageWithheld] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +32,8 @@ export function ExpenseForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (costCodeId === "") {
-      setError("Choose a cost code");
+    if (categoryId === "") {
+      setError("Choose a category");
       return;
     }
     if (vendorSelection === "") {
@@ -65,12 +61,10 @@ export function ExpenseForm({
       vendorId = vendorSelection;
     }
 
-    const result = await recordExpense({
-      jobId,
-      costCodeId,
+    const result = await recordOverheadExpense({
       vendorId,
+      overheadCategoryId: categoryId,
       amount,
-      retainageWithheld: withholdRetainage && retainageWithheld ? retainageWithheld : undefined,
       date,
       description: description || undefined,
     });
@@ -79,7 +73,7 @@ export function ExpenseForm({
       setSubmitting(false);
       return;
     }
-    router.push(`/jobs/${jobId}/transactions`);
+    router.push("/overhead");
     router.refresh();
   }
 
@@ -99,17 +93,17 @@ export function ExpenseForm({
           onNewNameChange={setNewVendorName}
         />
       </Field>
-      <Field label="Cost Code">
+      <Field label="Category">
         <select
           className={inputClass}
-          value={costCodeId}
-          onChange={(e) => setCostCodeId(e.target.value ? Number(e.target.value) : "")}
+          value={categoryId}
+          onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : "")}
           required
         >
-          <option value="">Select cost code…</option>
-          {costCodes.map((cc) => (
-            <option key={cc.id} value={cc.id}>
-              {cc.code} — {cc.name}
+          <option value="">Select category…</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.code} — {c.name}
             </option>
           ))}
         </select>
@@ -118,7 +112,7 @@ export function ExpenseForm({
         <input
           className={inputClass}
           inputMode="decimal"
-          placeholder="4200.00"
+          placeholder="450.00"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           required
@@ -136,29 +130,8 @@ export function ExpenseForm({
       <Field label="Description" hint="optional">
         <input className={inputClass} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
-
-      <label className="flex items-center gap-2 text-sm text-neutral-700">
-        <input
-          type="checkbox"
-          checked={withholdRetainage}
-          onChange={(e) => setWithholdRetainage(e.target.checked)}
-        />
-        Withholding retainage from this sub&apos;s bill
-      </label>
-      {withholdRetainage && (
-        <Field label="Retainage Withheld" hint="owed back to the vendor once accepted">
-          <input
-            className={inputClass}
-            inputMode="decimal"
-            placeholder="0.00"
-            value={retainageWithheld}
-            onChange={(e) => setRetainageWithheld(e.target.value)}
-          />
-        </Field>
-      )}
-
       <button type="submit" disabled={submitting} className={primaryButtonClass}>
-        {submitting ? "Recording…" : "Record Expense"}
+        {submitting ? "Recording…" : "Record Overhead Expense"}
       </button>
     </form>
   );
