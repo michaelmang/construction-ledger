@@ -29,3 +29,14 @@ export function expenseJobCostCode(jobCode: string, costCode: string): string {
 export function cash(account = "checking"): string {
   return `assets:${account}`;
 }
+
+// Turns an hledger account path into construction-first language for the UI
+// (product spec's guiding rule: the user should never need to know hledger
+// exists). Drops the top-level type segment and title-cases the rest, e.g.
+// "assets:accounts receivable:J2026-014" -> "Accounts Receivable — J2026-014".
+export function humanizeAccount(account: string): string {
+  const segments = account.split(":").slice(1);
+  const titleCase = (s: string) =>
+    s.replace(/\b\w/g, (c) => c.toUpperCase());
+  return segments.map(titleCase).join(" — ");
+}

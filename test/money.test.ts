@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import Decimal from "decimal.js";
 import { formatUSD, money, toJournalAmount } from "@/lib/money";
 
 describe("money", () => {
@@ -16,6 +17,13 @@ describe("formatUSD", () => {
 
   it("formats negative amounts with a leading minus", () => {
     expect(formatUSD("-1800")).toBe("-$1,800.00");
+  });
+
+  it("never shows a leading minus for a zero balance, even signed -0", () => {
+    // decimal.js preserves signed zero: a balance that nets to nothing via
+    // .negated() can carry a negative sign bit while still being zero.
+    expect(formatUSD(new Decimal(0).negated())).toBe("$0.00");
+    expect(formatUSD("0")).toBe("$0.00");
   });
 });
 

@@ -9,7 +9,9 @@ export function money(value: Decimal.Value | null | undefined): Money {
 
 export function formatUSD(value: Decimal.Value | null | undefined): string {
   const amount = money(value);
-  const negative = amount.isNegative();
+  // decimal.js preserves signed zero (-0), so isNegative() alone would print
+  // "-$0.00" for a value that nets to nothing — treat zero as non-negative.
+  const negative = !amount.isZero() && amount.isNegative();
   const formatted = amount.abs().toFixed(2);
   const [whole, cents] = formatted.split(".");
   const withCommas = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");

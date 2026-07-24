@@ -1,0 +1,36 @@
+import { getProfitabilityForActiveJobs } from "@/lib/reports";
+import { toCsv } from "@/lib/csv";
+
+export async function GET() {
+  const rows = await getProfitabilityForActiveJobs();
+
+  const csv = toCsv(
+    [
+      "Job Code",
+      "Job Name",
+      "Revised Contract Value",
+      "Estimated Total Cost",
+      "Projected Margin",
+      "Earned Revenue",
+      "Costs to Date",
+      "Actual Margin to Date",
+    ],
+    rows.map((r) => [
+      r.jobCode,
+      r.jobName,
+      r.wip.revisedContractValue.toFixed(2),
+      r.wip.estimatedTotalCost.toFixed(2),
+      r.profitability.projectedMargin.toFixed(2),
+      r.wip.earnedRevenue.toFixed(2),
+      r.wip.costsToDate.toFixed(2),
+      r.profitability.actualMarginToDate.toFixed(2),
+    ]),
+  );
+
+  return new Response(csv, {
+    headers: {
+      "Content-Type": "text/csv",
+      "Content-Disposition": 'attachment; filename="job-profitability.csv"',
+    },
+  });
+}

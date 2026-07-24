@@ -107,6 +107,18 @@ export async function getJobProfitability(jobId: number): Promise<JobProfitabili
   return { ...report, profitability };
 }
 
+export async function getProfitabilityForActiveJobs(): Promise<JobProfitabilityReport[]> {
+  const jobs = await prisma.job.findMany({ where: { status: "active" } });
+  return Promise.all(jobs.map((j) => getJobProfitability(j.id)));
+}
+
+export async function getRetainageAgingForActiveJobs(
+  asOf: Date = new Date(),
+): Promise<RetainageAgingReport[]> {
+  const jobs = await prisma.job.findMany({ where: { status: "active" } });
+  return Promise.all(jobs.map((j) => getRetainageAging(j.id, asOf)));
+}
+
 export async function getCostCodeBreakdown(jobId: number): Promise<CostCodeBreakdownRow[]> {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
   const { lines } = await costsToDateLines(job.code);
@@ -166,4 +178,23 @@ export interface CashPosition {
 // assets and liabilities (product spec §5.5).
 export async function getCashPosition(): Promise<CashPosition> {
   return balance(["type:AL"]);
+}
+
+export interface CashPositionSummary {
+  assetsTotal: Decimal;
+  liabilitiesTotal: Decimal;
+  netCash: Decimal;
+}
+
+// Aggregate-only view for the dashboard tile, so it never has to show raw
+// hledger account paths (product spec's guiding rule: hledger stays
+// invisible). The full account breakdown lives on the Reports > Cash
+// Position page, humanized via lib/accounts.ts.
+export async function getCashPositionSummary(): Promise<CashPositionSummary> {
+  const [assets, liabilities] = await Promise.all([balance(["type:A"]), balance(["type:L"])]);
+  return {
+    assetsTotal: assets.total,
+    liabilitiesTotal: liabilities.total,
+    netCash: assets.total.plus(liabilities.total),
+  };
 }
