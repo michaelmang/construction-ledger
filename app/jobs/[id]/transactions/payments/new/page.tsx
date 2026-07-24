@@ -19,11 +19,16 @@ export default async function NewPaymentPage({
     periodLabel: b.periodLabel,
     amountDue: new Decimal(b.amountBilled).minus(b.retainageWithheld).minus(b.paidAmount).toFixed(2),
   }));
+  const cashAccountOptions = cashAccounts.map((a) => ({
+    name: a.name,
+    label: a.label,
+    isDefault: a.isDefault,
+  }));
 
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-medium">Record a Payment Received</h2>
-      <PaymentForm jobId={jobId} cashAccounts={cashAccounts} unpaidBillings={unpaidBillings} />
+      <PaymentForm jobId={jobId} cashAccounts={cashAccountOptions} unpaidBillings={unpaidBillings} />
     </div>
   );
 }

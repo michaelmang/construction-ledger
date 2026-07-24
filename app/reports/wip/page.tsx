@@ -11,18 +11,18 @@ export default async function WipReportPage() {
         <h1 className="text-2xl font-semibold">WIP Schedule</h1>
         <a
           href="/api/reports/wip"
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-surface-2"
         >
           Download CSV
         </a>
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-neutral-500">No active jobs.</p>
+        <p className="text-text-3">No active jobs.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-neutral-500">
+            <thead className="bg-surface-2 text-left text-text-3">
               <tr>
                 <th className="px-4 py-2 font-medium">Job</th>
                 <th className="px-4 py-2 font-medium">Revised Contract</th>
@@ -35,14 +35,14 @@ export default async function WipReportPage() {
                 <th className="px-4 py-2 font-medium">Over/Under Billed</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="divide-y divide-border">
               {rows.map((r) => (
                 <tr key={r.jobId}>
                   <td className="px-4 py-2">
                     <Link href={`/jobs/${r.jobId}`} className="font-medium hover:underline">
                       {r.jobName}
                     </Link>
-                    <div className="text-xs text-neutral-500">{r.jobCode}</div>
+                    <div className="text-xs text-text-3">{r.jobCode}</div>
                   </td>
                   <td className="px-4 py-2">
                     <Money value={r.wip.revisedContractValue} />
@@ -54,7 +54,7 @@ export default async function WipReportPage() {
                     <Money value={r.wip.estimatedTotalCost} />
                   </td>
                   <td className="px-4 py-2">{r.wip.pctComplete.times(100).toFixed(1)}%</td>
-                  <td className="px-4 py-2 text-neutral-500">
+                  <td className="px-4 py-2 text-text-3">
                     {r.cfoPctCompleteEstimate ? `${r.cfoPctCompleteEstimate.toFixed(1)}%` : "—"}
                   </td>
                   <td className="px-4 py-2">

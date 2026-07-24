@@ -19,7 +19,7 @@ export default async function RetainageReportPage() {
         <h1 className="text-2xl font-semibold">Retainage Aging</h1>
         <a
           href="/api/reports/retainage"
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-surface-2"
         >
           Download CSV
         </a>
@@ -27,20 +27,20 @@ export default async function RetainageReportPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         {reports.map((r) => (
-          <div key={r.jobId} className="rounded-lg border border-neutral-200 bg-white p-4">
+          <div key={r.jobId} className="rounded-lg border border-border bg-surface p-4">
             <Link href={`/jobs/${r.jobId}`} className="font-medium hover:underline">
               {r.jobName}
             </Link>
-            <div className="text-xs text-neutral-500">{r.jobCode}</div>
+            <div className="text-xs text-text-3">{r.jobCode}</div>
             <dl className="mt-2 space-y-1 text-sm">
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Retainage Payable</dt>
+                <dt className="text-text-3">Retainage Payable</dt>
                 <dd>
                   <Money value={r.retainagePayableBalance} />
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-neutral-500">Retainage Receivable</dt>
+                <dt className="text-text-3">Retainage Receivable</dt>
                 <dd>
                   <Money value={r.retainageReceivableBalance} />
                 </dd>
@@ -51,11 +51,11 @@ export default async function RetainageReportPage() {
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-neutral-500">No progress billings yet.</p>
+        <p className="text-text-3">No progress billings yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-neutral-500">
+            <thead className="bg-surface-2 text-left text-text-3">
               <tr>
                 <th className="px-4 py-2 font-medium">Job</th>
                 <th className="px-4 py-2 font-medium">Period</th>
@@ -64,15 +64,15 @@ export default async function RetainageReportPage() {
                 <th className="px-4 py-2 font-medium">Days Outstanding</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="divide-y divide-border">
               {rows.map((b, i) => (
                 <tr key={i}>
                   <td className="px-4 py-2">
                     {b.jobName}
-                    <div className="text-xs text-neutral-500">{b.jobCode}</div>
+                    <div className="text-xs text-text-3">{b.jobCode}</div>
                   </td>
                   <td className="px-4 py-2">{b.periodLabel ?? "—"}</td>
-                  <td className="px-4 py-2 text-neutral-600">
+                  <td className="px-4 py-2 text-text-2">
                     {b.billingDate.toISOString().slice(0, 10)}
                   </td>
                   <td className="px-4 py-2">

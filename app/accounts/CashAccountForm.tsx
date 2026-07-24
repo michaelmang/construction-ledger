@@ -39,9 +39,9 @@ export function CashAccountForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 bg-white p-4"
+      className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-4"
     >
-      {error && <div className="w-full text-sm text-red-700">{error}</div>}
+      {error && <div className="w-full text-sm text-negative">{error}</div>}
       <Field label="Slug" hint='used in the ledger, e.g. "checking"'>
         <input
           className={inputClass}

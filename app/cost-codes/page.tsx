@@ -11,23 +11,23 @@ export default async function CostCodesPage() {
       <CostCodeForm />
 
       {costCodes.length === 0 ? (
-        <p className="text-neutral-500">No cost codes yet.</p>
+        <p className="text-text-3">No cost codes yet.</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-neutral-500">
+            <thead className="bg-surface-2 text-left text-text-3">
               <tr>
                 <th className="px-4 py-2 font-medium">Code</th>
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">CSI Division</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="divide-y divide-border">
               {costCodes.map((cc) => (
                 <tr key={cc.id}>
                   <td className="px-4 py-2 font-medium">{cc.code}</td>
                   <td className="px-4 py-2">{cc.name}</td>
-                  <td className="px-4 py-2 text-neutral-600">{cc.csiDivision ?? "—"}</td>
+                  <td className="px-4 py-2 text-text-2">{cc.csiDivision ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

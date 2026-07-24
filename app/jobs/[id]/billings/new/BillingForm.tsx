@@ -88,14 +88,14 @@ export function BillingForm({
 
   if (warning) {
     return (
-      <div className="max-w-lg space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-6">
-        <p className="text-sm font-medium text-amber-800">
+      <div className="max-w-lg space-y-4 rounded-lg border border-accent/30 bg-warn-soft p-6">
+        <p className="text-sm font-medium text-accent">
           Progress billing {initial ? "updated" : "created"}.
         </p>
-        <p className="text-sm text-amber-700">{warning}</p>
+        <p className="text-sm text-accent">{warning}</p>
         <Link
           href={`/jobs/${jobId}/billings`}
-          className="inline-block text-sm font-medium text-amber-900 underline"
+          className="inline-block text-sm font-medium text-accent underline"
         >
           Continue to Billings
         </Link>
@@ -106,10 +106,10 @@ export function BillingForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="max-w-lg space-y-4 rounded-lg border border-neutral-200 bg-white p-6"
+      className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6"
     >
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
           {error}
         </div>
       )}
@@ -165,13 +165,13 @@ export function BillingForm({
       </Field>
 
       {computedRetainage !== null && netAfterRetainage !== null && (
-        <div className="rounded-md bg-neutral-50 px-4 py-3 text-sm">
+        <div className="rounded-md bg-surface-2 px-4 py-3 text-sm">
           <div className="flex justify-between">
-            <span className="text-neutral-500">Retainage withheld</span>
+            <span className="text-text-3">Retainage withheld</span>
             <span>{formatUSD(computedRetainage)}</span>
           </div>
           <div className="flex justify-between font-medium">
-            <span className="text-neutral-500">Net billed (AR)</span>
+            <span className="text-text-3">Net billed (AR)</span>
             <span>{formatUSD(netAfterRetainage)}</span>
           </div>
         </div>

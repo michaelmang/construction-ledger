@@ -83,10 +83,10 @@ export function PaymentForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="max-w-lg space-y-4 rounded-lg border border-neutral-200 bg-white p-6"
+      className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6"
     >
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
           {error}
         </div>
       )}
@@ -122,7 +122,7 @@ export function PaymentForm({
         />
       </Field>
       {selectedBilling && (
-        <p className="text-xs text-neutral-500">Amount due on this billing: {selectedBilling.amountDue}</p>
+        <p className="text-xs text-text-3">Amount due on this billing: {selectedBilling.amountDue}</p>
       )}
       <Field label="Date">
         <input

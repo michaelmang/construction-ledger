@@ -108,10 +108,10 @@ export function JobWizard({ existingCostCodes }: { existingCostCodes: CostCodeOp
             key={label}
             className={
               step === i + 1
-                ? "font-semibold text-neutral-900"
+                ? "font-semibold text-text"
                 : step > i + 1
-                  ? "text-neutral-500"
-                  : "text-neutral-300"
+                  ? "text-text-3"
+                  : "text-text-3/50"
             }
           >
             {i + 1}. {label}
@@ -120,13 +120,13 @@ export function JobWizard({ existingCostCodes }: { existingCostCodes: CostCodeOp
       </ol>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
           {error}
         </div>
       )}
 
       {step === 1 && (
-        <div className="space-y-4 rounded-lg border border-neutral-200 bg-white p-6">
+        <div className="space-y-4 rounded-lg border border-border bg-surface p-6">
           <Field label="Job Code" hint="Short slug, e.g. J2026-014">
             <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value)} />
           </Field>
@@ -172,7 +172,7 @@ export function JobWizard({ existingCostCodes }: { existingCostCodes: CostCodeOp
       )}
 
       {step === 2 && (
-        <div className="space-y-4 rounded-lg border border-neutral-200 bg-white p-6">
+        <div className="space-y-4 rounded-lg border border-border bg-surface p-6">
           <Field label="Contract Value">
             <input
               className={inputClass}
@@ -202,8 +202,8 @@ export function JobWizard({ existingCostCodes }: { existingCostCodes: CostCodeOp
       )}
 
       {step === 3 && (
-        <div className="space-y-4 rounded-lg border border-neutral-200 bg-white p-6">
-          <p className="text-sm text-neutral-500">
+        <div className="space-y-4 rounded-lg border border-border bg-surface p-6">
+          <p className="text-sm text-text-3">
             Set an initial budget per cost code. You can adjust these later.
           </p>
           {rows.map((row) => (
@@ -252,7 +252,7 @@ export function JobWizard({ existingCostCodes }: { existingCostCodes: CostCodeOp
               <button
                 type="button"
                 onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
-                className="px-2 py-2 text-neutral-400 hover:text-red-600"
+                className="px-2 py-2 text-text-3 hover:text-negative"
                 aria-label="Remove row"
               >
                 ✕
@@ -262,7 +262,7 @@ export function JobWizard({ existingCostCodes }: { existingCostCodes: CostCodeOp
           <button
             type="button"
             onClick={() => setRows((prev) => [...prev, emptyRow()])}
-            className="text-sm text-neutral-600 underline"
+            className="text-sm text-text-2 underline"
           >
             + Add another cost code
           </button>

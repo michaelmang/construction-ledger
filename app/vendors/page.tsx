@@ -13,21 +13,21 @@ export default async function VendorsPage() {
       <VendorForm />
 
       {vendors.length === 0 ? (
-        <p className="text-neutral-500">No vendors yet.</p>
+        <p className="text-text-3">No vendors yet.</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-neutral-500">
+            <thead className="bg-surface-2 text-left text-text-3">
               <tr>
                 <th className="px-4 py-2 font-medium">Vendor</th>
                 <th className="px-4 py-2 font-medium">Open Balance</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="divide-y divide-border">
               {vendors.map((v) => (
                 <tr key={v.id}>
                   <td className="px-4 py-2">
-                    <Link href={`/vendors/${v.id}`} className="font-medium text-neutral-900 hover:underline">
+                    <Link href={`/vendors/${v.id}`} className="font-medium text-text hover:underline">
                       {v.name}
                     </Link>
                   </td>

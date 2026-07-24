@@ -15,7 +15,7 @@ export function JobTabs({ jobId }: { jobId: number }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex gap-1 border-b border-neutral-200">
+    <nav className="flex gap-1 border-b border-border">
       {tabs.map((tab) => {
         const href = `/jobs/${jobId}${tab.href}`;
         const isActive = tab.href === "" ? pathname === href : pathname.startsWith(href);
@@ -25,8 +25,8 @@ export function JobTabs({ jobId }: { jobId: number }) {
             href={href}
             className={`border-b-2 px-3 py-2 text-sm ${
               isActive
-                ? "border-neutral-900 text-neutral-900"
-                : "border-transparent text-neutral-600 hover:border-neutral-300 hover:text-neutral-900"
+                ? "border-accent font-medium text-accent"
+                : "border-transparent text-text-2 hover:border-border hover:text-text"
             }`}
           >
             {tab.label}

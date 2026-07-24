@@ -1,7 +1,9 @@
 import Link from "next/link";
-import Decimal from "decimal.js";
-import { getJobProfitability } from "@/lib/reports";
-import { Money } from "@/components/Money";
+import { getJobProfitability, getJobCostTrend } from "@/lib/reports";
+import { formatUSD } from "@/lib/money";
+import { StatCard } from "@/components/ui/StatCard";
+import { AreaChart } from "@/components/ui/AreaChart";
+import { primaryButtonClass, secondaryButtonClass } from "@/components/form";
 
 export default async function JobOverviewPage({
   params,
@@ -10,67 +12,56 @@ export default async function JobOverviewPage({
 }) {
   const { id } = await params;
   const jobId = Number(id);
-  const { wip, profitability, cfoPctCompleteEstimate } = await getJobProfitability(jobId);
+  const [{ wip, profitability, cfoPctCompleteEstimate }, costTrend] = await Promise.all([
+    getJobProfitability(jobId),
+    getJobCostTrend(jobId),
+  ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex gap-2">
-        <Link
-          href={`/jobs/${jobId}/transactions/expenses/new`}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
-        >
+        <Link href={`/jobs/${jobId}/transactions/expenses/new`} className={primaryButtonClass}>
           Record Expense
         </Link>
-        <Link
-          href={`/jobs/${jobId}/transactions/payments/new`}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-        >
+        <Link href={`/jobs/${jobId}/transactions/payments/new`} className={secondaryButtonClass}>
           Record Payment
         </Link>
-        <Link
-          href={`/jobs/${jobId}/billings/new`}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-        >
+        <Link href={`/jobs/${jobId}/billings/new`} className={secondaryButtonClass}>
           Create Progress Billing
         </Link>
       </div>
 
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <Stat label="Revised Contract Value" value={wip.revisedContractValue} />
-        <Stat label="% Complete" text={`${wip.pctComplete.times(100).toFixed(1)}%`} />
-        <Stat
+        <StatCard label="Revised Contract Value" value={formatUSD(wip.revisedContractValue)} />
+        <StatCard label="% Complete" value={`${wip.pctComplete.times(100).toFixed(1)}%`} />
+        <StatCard
           label="CFO % Est."
-          text={cfoPctCompleteEstimate ? `${cfoPctCompleteEstimate.toFixed(1)}%` : "—"}
+          value={cfoPctCompleteEstimate ? `${cfoPctCompleteEstimate.toFixed(1)}%` : "—"}
         />
-        <Stat label="Costs to Date" value={wip.costsToDate} />
-        <Stat label="Estimated Total Cost" value={wip.estimatedTotalCost} />
-        <Stat label="Earned Revenue" value={wip.earnedRevenue} />
-        <Stat label="Billed to Date" value={wip.billedToDate} />
-        <Stat label="Over / Under Billed" value={wip.overUnderBilling} colorize />
-        <Stat label="Projected Margin" value={profitability.projectedMargin} colorize />
-        <Stat label="Actual Margin to Date" value={profitability.actualMarginToDate} colorize />
+        <StatCard label="Costs to Date" value={formatUSD(wip.costsToDate)} />
+        <StatCard label="Estimated Total Cost" value={formatUSD(wip.estimatedTotalCost)} />
+        <StatCard label="Earned Revenue" value={formatUSD(wip.earnedRevenue)} />
+        <StatCard label="Billed to Date" value={formatUSD(wip.billedToDate)} />
+        <StatCard
+          label="Over / Under Billed"
+          value={formatUSD(wip.overUnderBilling)}
+          tone={wip.overUnderBilling.isNegative() ? "negative" : "positive"}
+        />
+        <StatCard
+          label="Actual Margin to Date"
+          value={formatUSD(profitability.actualMarginToDate)}
+          tone={profitability.actualMarginToDate.isNegative() ? "negative" : "positive"}
+        />
       </section>
-    </div>
-  );
-}
 
-function Stat({
-  label,
-  value,
-  text,
-  colorize,
-}: {
-  label: string;
-  value?: Decimal;
-  text?: string;
-  colorize?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4">
-      <div className="text-xs text-neutral-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold">
-        {text ?? (value !== undefined ? <Money value={value} colorize={colorize} /> : "—")}
-      </div>
+      <section className="rounded-xl border border-border bg-surface p-5">
+        <div className="text-[11px] font-medium uppercase tracking-widest text-text-3">
+          Costs by Month
+        </div>
+        <div className="mt-4">
+          <AreaChart points={costTrend.map((p) => ({ label: p.month, value: p.costs }))} format="usd" />
+        </div>
+      </section>
     </div>
   );
 }

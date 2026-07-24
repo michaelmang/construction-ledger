@@ -211,6 +211,65 @@ export async function getCashPosition(): Promise<CashPosition> {
   return balance(["type:AL"]);
 }
 
+export interface MonthlyCostPoint {
+  month: string; // YYYY-MM
+  costs: number; // costs incurred that month, not cumulative
+}
+
+// Per-month cost totals for a job's overview chart (v2 spec §4.4). Samples
+// cumulative costs-to-date at each month boundary and takes deltas, same
+// as-of-date approach as getCashTrend for the same reason: simple to reason
+// about correct.
+export async function getJobCostTrend(jobId: number, months: number = 6): Promise<MonthlyCostPoint[]> {
+  const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
+  const today = new Date();
+  const cumulative: { month: string; total: Decimal }[] = [];
+
+  for (let i = months; i >= 0; i--) {
+    const boundary = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
+    const dateArg = boundary.toISOString().slice(0, 10).replace(/-/g, "");
+    const { total } = await balance([`tag:job=${job.code}`, "type:x", `date:-${dateArg}`]);
+    const monthLabel = new Date(today.getFullYear(), today.getMonth() - i, 1)
+      .toISOString()
+      .slice(0, 7);
+    cumulative.push({ month: monthLabel, total });
+  }
+
+  return cumulative.map((point, i) => ({
+    month: point.month,
+    costs: (i === 0 ? point.total : point.total.minus(cumulative[i - 1].total)).toNumber(),
+  }));
+}
+
+export interface CashTrendPoint {
+  date: string; // YYYY-MM-DD
+  netCash: number;
+}
+
+// Weekly net-cash snapshots for the dashboard trend chart (v2 spec §F15).
+// Samples `hledger balance` as-of each week boundary rather than relying on
+// register()'s running-total semantics, so it's simple to reason about
+// correct — one call per point is fine at dashboard scale.
+export async function getCashTrend(weeks: number = 8): Promise<CashTrendPoint[]> {
+  const today = new Date();
+  const points: CashTrendPoint[] = [];
+
+  for (let i = weeks; i >= 0; i--) {
+    const asOf = new Date(today);
+    asOf.setDate(asOf.getDate() - i * 7);
+    const dateStr = asOf.toISOString().slice(0, 10);
+    // hledger's `date:-DATE` end boundary is exclusive, so query the day
+    // after to include everything dated on `asOf` itself.
+    const inclusiveEnd = new Date(asOf);
+    inclusiveEnd.setDate(inclusiveEnd.getDate() + 1);
+    const dateArg = inclusiveEnd.toISOString().slice(0, 10).replace(/-/g, "");
+    const { total } = await balance(["type:AL", `date:-${dateArg}`]);
+    points.push({ date: dateStr, netCash: total.toNumber() });
+  }
+
+  return points;
+}
+
 export interface CashPositionSummary {
   assetsTotal: Decimal;
   liabilitiesTotal: Decimal;
@@ -291,4 +350,72 @@ export async function getApAging(asOf: Date = new Date()): Promise<ApAgingRow[]>
     })),
     asOf,
   );
+}
+
+export interface OverBudgetAlert {
+  jobId: number;
+  jobCode: string;
+  jobName: string;
+  costCode: string;
+  costCodeName: string;
+  utilizationPct: Decimal; // actual / estimatedAtCompletion * 100
+}
+
+// "Concrete on J2026-014 is 112% of estimate" alerts for the dashboard (v2
+// spec §F15).
+export async function getOverBudgetAlerts(): Promise<OverBudgetAlert[]> {
+  const jobs = await prisma.job.findMany({ where: { status: "active" } });
+  const alerts: OverBudgetAlert[] = [];
+
+  for (const job of jobs) {
+    const rows = await getCostCodeBreakdown(job.id);
+    for (const row of rows) {
+      if (row.remaining.isNegative() && !row.estimatedAtCompletion.isZero()) {
+        alerts.push({
+          jobId: job.id,
+          jobCode: job.code,
+          jobName: job.name,
+          costCode: row.costCode,
+          costCodeName: row.costCodeName,
+          utilizationPct: row.actual.dividedBy(row.estimatedAtCompletion).times(100),
+        });
+      }
+    }
+  }
+
+  return alerts;
+}
+
+export interface DashboardSummary {
+  totalOverUnderBilling: Decimal; // sum across active jobs; positive = net overbilled
+  totalArOutstanding: Decimal;
+  totalApOutstanding: Decimal;
+  totalRetainageHeld: Decimal; // retainage payable + retainage receivable, across active jobs
+}
+
+// Aggregate figures for the dashboard hero row beyond the plain cash tile
+// (v2 spec §F15).
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  const [wipReports, arReports, apRows, retainageReports] = await Promise.all([
+    getWipScheduleForActiveJobs(),
+    getArAgingForActiveJobs(),
+    getApAging(),
+    getRetainageAgingForActiveJobs(),
+  ]);
+
+  const totalOverUnderBilling = wipReports.reduce(
+    (sum, r) => sum.plus(r.wip.overUnderBilling),
+    new Decimal(0),
+  );
+  const totalArOutstanding = arReports.reduce(
+    (sum, r) => sum.plus(r.rows.reduce((s, row) => s.plus(row.amountDue), new Decimal(0))),
+    new Decimal(0),
+  );
+  const totalApOutstanding = apRows.reduce((sum, r) => sum.plus(r.amountDue), new Decimal(0));
+  const totalRetainageHeld = retainageReports.reduce(
+    (sum, r) => sum.plus(r.retainagePayableBalance).plus(r.retainageReceivableBalance),
+    new Decimal(0),
+  );
+
+  return { totalOverUnderBilling, totalArOutstanding, totalApOutstanding, totalRetainageHeld };
 }

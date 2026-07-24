@@ -29,12 +29,12 @@ export default async function JobCostCodesPage({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-text-2">
         Edit the revised estimate as costs firm up — the WIP schedule recomputes from
         whatever you save here.
       </p>
       {rows.length === 0 && available.length === 0 ? (
-        <p className="text-neutral-500">No cost codes exist yet.</p>
+        <p className="text-text-3">No cost codes exist yet.</p>
       ) : (
         <CostCodeGrid jobId={jobId} rows={gridRows} available={available} />
       )}

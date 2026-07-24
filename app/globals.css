@@ -3,4 +3,36 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* v2 spec §4.1 — dark, gold-accented design tokens */
+  --color-bg: #0b0b09;
+  --color-surface: #141311;
+  --color-surface-2: #1c1a16;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-text: #f4f2ed;
+  --color-text-2: #a8a29a;
+  --color-text-3: #6e6961;
+  --color-accent: #e8b64c;
+  --color-accent-soft: rgba(232, 182, 76, 0.12);
+  --color-positive: #4caf6e;
+  --color-positive-soft: rgba(76, 175, 110, 0.12);
+  --color-negative: #e4574b;
+  --color-negative-soft: rgba(228, 87, 75, 0.12);
+  --color-warn: #e8b64c;
+  --color-warn-soft: rgba(232, 182, 76, 0.12);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Numbers, job codes, and cost codes read as mono tabular figures
+   throughout (v2 spec §4.1) so columns of amounts line up. */
+.font-tabular {
+  font-variant-numeric: tabular-nums;
 }

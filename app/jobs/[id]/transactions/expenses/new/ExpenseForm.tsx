@@ -104,9 +104,9 @@ export function ExpenseForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-lg space-y-4 rounded-lg border border-neutral-200 bg-white p-6">
+    <form onSubmit={handleSubmit} className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6">
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
           {error}
         </div>
       )}
@@ -157,7 +157,7 @@ export function ExpenseForm({
         <input className={inputClass} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
 
-      <label className="flex items-center gap-2 text-sm text-neutral-700">
+      <label className="flex items-center gap-2 text-sm text-text-2">
         <input
           type="checkbox"
           checked={withholdRetainage}

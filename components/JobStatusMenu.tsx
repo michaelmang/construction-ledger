@@ -11,9 +11,9 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_CLASSES: Record<string, string> = {
-  active: "bg-green-100 text-green-700",
-  complete: "bg-neutral-100 text-neutral-700",
-  archived: "bg-red-100 text-red-700",
+  active: "bg-positive-soft text-positive",
+  complete: "bg-surface-2 text-text-2",
+  archived: "bg-negative-soft text-negative",
 };
 
 export function JobStatusMenu({ jobId, status }: { jobId: number; status: string }) {
@@ -40,7 +40,7 @@ export function JobStatusMenu({ jobId, status }: { jobId: number; status: string
         value={status}
         onChange={(e) => handleChange(e.target.value)}
         disabled={saving}
-        className={`rounded-full border-0 px-2 py-0.5 text-xs font-medium capitalize ${STATUS_CLASSES[status] ?? "bg-neutral-100 text-neutral-700"}`}
+        className={`rounded-full border-0 px-2 py-0.5 text-xs font-medium capitalize ${STATUS_CLASSES[status] ?? "bg-surface-2 text-text-2"}`}
       >
         {Object.entries(STATUS_LABELS).map(([value, label]) => (
           <option key={value} value={value}>
@@ -48,7 +48,7 @@ export function JobStatusMenu({ jobId, status }: { jobId: number; status: string
           </option>
         ))}
       </select>
-      {error && <div className="mt-1 text-xs text-red-700">{error}</div>}
+      {error && <div className="mt-1 text-xs text-negative">{error}</div>}
     </div>
   );
 }

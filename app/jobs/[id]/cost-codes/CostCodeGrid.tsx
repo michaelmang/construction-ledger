@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { setBudget } from "@/app/actions/jobs";
 import { formatUSD } from "@/lib/money";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { tableWrapClass, tableClass, theadClass, thClass, tbodyClass } from "@/components/table";
 
 export interface CostCodeGridRow {
   costCodeId: number;
@@ -60,50 +61,52 @@ function GridRow({ row, jobId }: { row: CostCodeGridRow; jobId: number }) {
   }
 
   return (
-    <tr>
-      <td className="px-4 py-2">
-        <div className="font-medium">{row.costCodeName}</div>
-        <div className="text-xs text-neutral-500">{row.costCode}</div>
+    <tr className="hover:bg-surface-2">
+      <td className="px-4 py-3">
+        <div className="font-medium text-text">{row.costCodeName}</div>
+        <div className="font-mono text-xs tabular-nums text-text-3">{row.costCode}</div>
       </td>
-      <td className="px-4 py-2">
+      <td className="px-4 py-3">
         <input
-          className={`${inputClass} w-28`}
+          className={`${inputClass} w-28 font-mono tabular-nums`}
           inputMode="decimal"
           value={budgeted}
           onChange={(e) => setBudgeted(e.target.value)}
         />
       </td>
-      <td className="px-4 py-2">
+      <td className="px-4 py-3">
         <input
-          className={`${inputClass} w-28`}
+          className={`${inputClass} w-28 font-mono tabular-nums`}
           inputMode="decimal"
           placeholder={row.budgeted}
           value={revisedEstimate}
           onChange={(e) => setRevisedEstimate(e.target.value)}
         />
       </td>
-      <td className="px-4 py-2">{formatUSD(row.actual)}</td>
-      <td className="px-4 py-2">
-        <span className={over ? "text-red-600" : ""}>{formatUSD(row.remaining)}</span>
-        <div className="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-neutral-100">
+      <td className="px-4 py-3 font-mono tabular-nums text-text-2">{formatUSD(row.actual)}</td>
+      <td className="px-4 py-3">
+        <span className={`font-mono tabular-nums ${over ? "text-negative" : "text-text"}`}>
+          {formatUSD(row.remaining)}
+        </span>
+        <div className="mt-1.5 h-1.5 w-24 overflow-hidden rounded-full bg-surface-2">
           <div
-            className={`h-full ${over ? "bg-red-500" : "bg-neutral-900"}`}
+            className={`h-full ${over ? "bg-negative" : "bg-accent"}`}
             style={{ width: `${Math.min(pct, 100)}%` }}
           />
         </div>
       </td>
-      <td className="px-4 py-2">
+      <td className="px-4 py-3">
         {dirty && (
           <button
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="text-sm font-medium text-neutral-900 underline disabled:opacity-40"
+            className="text-sm font-medium text-accent hover:underline disabled:opacity-40"
           >
             {saving ? "Saving…" : "Save"}
           </button>
         )}
-        {error && <div className="mt-1 text-xs text-red-700">{error}</div>}
+        {error && <div className="mt-1 text-xs text-negative">{error}</div>}
       </td>
     </tr>
   );
@@ -138,7 +141,7 @@ function AddCostCodeRow({ jobId, available }: { jobId: number; available: Availa
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3 border-t border-neutral-200 bg-neutral-50 p-4">
+    <div className="flex flex-wrap items-end gap-3 border-t border-border bg-surface-2 p-4">
       <Field label="Add Cost Code">
         <select
           className={inputClass}
@@ -165,7 +168,7 @@ function AddCostCodeRow({ jobId, available }: { jobId: number; available: Availa
       <button type="button" onClick={handleAdd} disabled={saving} className={primaryButtonClass}>
         {saving ? "Adding…" : "Add"}
       </button>
-      {error && <div className="w-full text-xs text-red-700">{error}</div>}
+      {error && <div className="w-full text-xs text-negative">{error}</div>}
     </div>
   );
 }
@@ -180,19 +183,19 @@ export function CostCodeGrid({
   available: AvailableCostCode[];
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-      <table className="w-full text-sm">
-        <thead className="bg-neutral-50 text-left text-neutral-500">
+    <div className={tableWrapClass}>
+      <table className={tableClass}>
+        <thead className={theadClass}>
           <tr>
-            <th className="px-4 py-2 font-medium">Cost Code</th>
-            <th className="px-4 py-2 font-medium">Budgeted</th>
-            <th className="px-4 py-2 font-medium">Est. at Completion</th>
-            <th className="px-4 py-2 font-medium">Actual</th>
-            <th className="px-4 py-2 font-medium">Remaining</th>
-            <th className="px-4 py-2 font-medium"></th>
+            <th className={thClass}>Cost Code</th>
+            <th className={thClass}>Budgeted</th>
+            <th className={thClass}>Est. at Completion</th>
+            <th className={thClass}>Actual</th>
+            <th className={thClass}>Remaining</th>
+            <th className={thClass}></th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-100">
+        <tbody className={tbodyClass}>
           {/*
             Keying on the committed values (not just costCodeId) forces a
             remount after a successful save, so local edit state resets to

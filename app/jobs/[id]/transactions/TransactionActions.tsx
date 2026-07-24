@@ -44,29 +44,29 @@ export function TransactionActions({
   if (confirming) {
     return (
       <div className="flex items-center gap-2 text-xs">
-        <span className="text-neutral-600">Delete this entry?</span>
+        <span className="text-text-2">Delete this entry?</span>
         <button
           type="button"
           onClick={handleDelete}
           disabled={deleting}
-          className="font-medium text-red-600 hover:underline disabled:opacity-40"
+          className="font-medium text-negative hover:underline disabled:opacity-40"
         >
           {deleting ? "Deleting…" : "Confirm"}
         </button>
-        <button type="button" onClick={() => setConfirming(false)} className="text-neutral-500 hover:underline">
+        <button type="button" onClick={() => setConfirming(false)} className="text-text-3 hover:underline">
           Cancel
         </button>
-        {error && <span className="text-red-700">{error}</span>}
+        {error && <span className="text-negative">{error}</span>}
       </div>
     );
   }
 
   return (
     <div className="flex items-center gap-3 text-xs">
-      <Link href={editHref} className="text-neutral-600 hover:underline">
+      <Link href={editHref} className="text-text-2 hover:underline">
         Edit
       </Link>
-      <button type="button" onClick={() => setConfirming(true)} className="text-neutral-600 hover:underline">
+      <button type="button" onClick={() => setConfirming(true)} className="text-text-2 hover:underline">
         Delete
       </button>
     </div>

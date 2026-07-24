@@ -29,13 +29,18 @@ export default async function EditPaymentPage({
       !p.account.startsWith("assets:retainage receivable:"),
   );
   const cashAccountName = cashPosting ? cashPosting.account.slice("assets:".length) : "checking";
+  const cashAccountOptions = cashAccounts.map((a) => ({
+    name: a.name,
+    label: a.label,
+    isDefault: a.isDefault,
+  }));
 
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-medium">Edit Payment</h2>
       <PaymentForm
         jobId={Number(id)}
-        cashAccounts={cashAccounts}
+        cashAccounts={cashAccountOptions}
         unpaidBillings={[]}
         initial={{
           txnid,

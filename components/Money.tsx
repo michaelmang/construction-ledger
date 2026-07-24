@@ -15,8 +15,8 @@ export function Money({
     ? amount.isZero()
       ? ""
       : amount.isNegative()
-        ? "text-red-600"
-        : "text-green-700"
+        ? "text-negative"
+        : "text-positive"
     : "";
-  return <span className={colorClass}>{formatUSD(amount)}</span>;
+  return <span className={`font-mono tabular-nums ${colorClass}`}>{formatUSD(amount)}</span>;
 }

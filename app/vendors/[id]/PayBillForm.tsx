@@ -33,7 +33,7 @@ export function PayBillForm({
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="text-sm font-medium text-neutral-900 underline">
+      <button type="button" onClick={() => setOpen(true)} className="text-sm font-medium text-text underline">
         Pay
       </button>
     );
@@ -53,8 +53,8 @@ export function PayBillForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-2 space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
-      {error && <div className="text-xs text-red-700">{error}</div>}
+    <form onSubmit={handleSubmit} className="mt-2 space-y-2 rounded-md border border-border bg-surface-2 p-3">
+      {error && <div className="text-xs text-negative">{error}</div>}
       <div className="grid grid-cols-3 gap-2">
         <Field label="Amount">
           <input
@@ -88,7 +88,7 @@ export function PayBillForm({
           </select>
         </Field>
       </div>
-      <p className="text-xs text-neutral-500">Amount due: {formatUSD(amountDue)}</p>
+      <p className="text-xs text-text-3">Amount due: {formatUSD(amountDue)}</p>
       <div className="flex gap-2">
         <button type="submit" disabled={submitting} className={primaryButtonClass}>
           {submitting ? "Paying…" : "Confirm Payment"}

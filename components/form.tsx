@@ -1,9 +1,13 @@
+// v2 spec §4.3: dark surfaces, accent focus ring, black text on the accent
+// primary button. Shared across every form in the app.
 export const inputClass =
-  "w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none";
+  "w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-3 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 export const primaryButtonClass =
-  "rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-40";
+  "rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:brightness-110 disabled:opacity-40";
 export const secondaryButtonClass =
-  "rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50";
+  "rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-2 hover:bg-surface-2";
+export const destructiveButtonClass =
+  "rounded-lg border border-negative/40 px-4 py-2 text-sm font-medium text-negative hover:bg-negative-soft";
 
 export function Field({
   label,
@@ -16,8 +20,8 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-neutral-700">{label}</span>
-      {hint && <span className="ml-2 text-xs text-neutral-400">{hint}</span>}
+      <span className="text-sm font-medium text-text-2">{label}</span>
+      {hint && <span className="ml-2 text-xs text-text-3">{hint}</span>}
       <div className="mt-1">{children}</div>
     </label>
   );

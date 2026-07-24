@@ -1,6 +1,8 @@
 import { getJob, getJobTransactionsGrouped, listJobBudgets, listVendors } from "@/lib/queries";
 import { Money } from "@/components/Money";
 import { TransactionActions } from "./TransactionActions";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { tableWrapClass, tableClass, theadClass, thClass, tbodyClass, trClass } from "@/components/table";
 
 const KIND_LABELS: Record<string, string> = {
   expense: "Expense",
@@ -10,6 +12,9 @@ const KIND_LABELS: Record<string, string> = {
   "overhead-expense": "Overhead",
   "opening-balance": "Opening Balance",
 };
+
+const filterInputClass =
+  "rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-text focus:border-accent focus:outline-none";
 
 export default async function JobTransactionsPage({
   params,
@@ -46,40 +51,26 @@ export default async function JobTransactionsPage({
     <div className="space-y-4">
       <form className="flex flex-wrap items-end gap-2">
         <div>
-          <label className="block text-xs text-neutral-500">Description</label>
+          <label className="block text-xs text-text-3">Description</label>
           <input
             type="text"
             name="q"
             defaultValue={q ?? ""}
             placeholder="Filter…"
-            className="w-48 rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:border-neutral-500 focus:outline-none"
+            className={`w-48 ${filterInputClass}`}
           />
         </div>
         <div>
-          <label className="block text-xs text-neutral-500">From</label>
-          <input
-            type="date"
-            name="from"
-            defaultValue={from ?? ""}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:border-neutral-500 focus:outline-none"
-          />
+          <label className="block text-xs text-text-3">From</label>
+          <input type="date" name="from" defaultValue={from ?? ""} className={filterInputClass} />
         </div>
         <div>
-          <label className="block text-xs text-neutral-500">To</label>
-          <input
-            type="date"
-            name="to"
-            defaultValue={to ?? ""}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:border-neutral-500 focus:outline-none"
-          />
+          <label className="block text-xs text-text-3">To</label>
+          <input type="date" name="to" defaultValue={to ?? ""} className={filterInputClass} />
         </div>
         <div>
-          <label className="block text-xs text-neutral-500">Cost Code</label>
-          <select
-            name="costCode"
-            defaultValue={costCode ?? ""}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:border-neutral-500 focus:outline-none"
-          >
+          <label className="block text-xs text-text-3">Cost Code</label>
+          <select name="costCode" defaultValue={costCode ?? ""} className={filterInputClass}>
             <option value="">All</option>
             {budgets.map((b) => (
               <option key={b.costCode.code} value={b.costCode.code}>
@@ -89,12 +80,8 @@ export default async function JobTransactionsPage({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-neutral-500">Vendor</label>
-          <select
-            name="vendor"
-            defaultValue={vendor ?? ""}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:border-neutral-500 focus:outline-none"
-          >
+          <label className="block text-xs text-text-3">Vendor</label>
+          <select name="vendor" defaultValue={vendor ?? ""} className={filterInputClass}>
             <option value="">All</option>
             {vendors.map((v) => (
               <option key={v.id} value={v.name.toLowerCase()}>
@@ -104,12 +91,8 @@ export default async function JobTransactionsPage({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-neutral-500">Type</label>
-          <select
-            name="kind"
-            defaultValue={kind ?? ""}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:border-neutral-500 focus:outline-none"
-          >
+          <label className="block text-xs text-text-3">Type</label>
+          <select name="kind" defaultValue={kind ?? ""} className={filterInputClass}>
             <option value="">All</option>
             {Object.entries(KIND_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -118,37 +101,34 @@ export default async function JobTransactionsPage({
             ))}
           </select>
         </div>
-        <button
-          type="submit"
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-        >
+        <button type="submit" className="rounded-lg border border-border px-3 py-1.5 text-sm text-text-2 hover:bg-surface-2">
           Filter
         </button>
       </form>
 
       {groups.length === 0 ? (
-        <p className="text-neutral-500">No transactions.</p>
+        <EmptyState label="No Transactions" message="Nothing recorded yet for this job." />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-neutral-500">
+        <div className={tableWrapClass}>
+          <table className={tableClass}>
+            <thead className={theadClass}>
               <tr>
-                <th className="px-4 py-2 font-medium">Date</th>
-                <th className="px-4 py-2 font-medium">Description</th>
-                <th className="px-4 py-2 font-medium">Type</th>
-                <th className="px-4 py-2 font-medium">Accounts</th>
-                <th className="px-4 py-2 font-medium"></th>
+                <th className={thClass}>Date</th>
+                <th className={thClass}>Description</th>
+                <th className={thClass}>Type</th>
+                <th className={thClass}>Accounts</th>
+                <th className={thClass}></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className={tbodyClass}>
               {groups.map((g, i) => (
-                <tr key={g.txnid ?? i}>
-                  <td className="px-4 py-2 text-neutral-600">{g.date}</td>
-                  <td className="px-4 py-2">{g.description}</td>
-                  <td className="px-4 py-2 text-neutral-600">
+                <tr key={g.txnid ?? i} className={trClass}>
+                  <td className="px-4 py-3 font-mono text-sm tabular-nums text-text-3">{g.date}</td>
+                  <td className="px-4 py-3 text-sm text-text">{g.description}</td>
+                  <td className="px-4 py-3 text-sm text-text-2">
                     {g.kind ? (KIND_LABELS[g.kind] ?? g.kind) : "—"}
                   </td>
-                  <td className="px-4 py-2 text-neutral-600">
+                  <td className="px-4 py-3 text-sm text-text-2">
                     <ul className="space-y-0.5">
                       {g.postings.map((p, j) => (
                         <li key={j} className="flex justify-between gap-4">
@@ -158,7 +138,7 @@ export default async function JobTransactionsPage({
                       ))}
                     </ul>
                   </td>
-                  <td className="px-4 py-2 align-top">
+                  <td className="px-4 py-3 align-top">
                     {g.txnid && <TransactionActions jobId={jobId} txnid={g.txnid} kind={g.kind} />}
                   </td>
                 </tr>
