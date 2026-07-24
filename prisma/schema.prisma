@@ -1,0 +1,97 @@
+// Prisma schema — metadata DB for jobs, cost codes, budgets, change orders,
+// billings. The hledger journal (separate repo) is the source of truth for
+// money movement; this DB is the source of truth for job metadata.
+// See BUILD-INSTRUCTIONS.md and ~/Downloads/construction-ledger-spec.md §3.1.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Job {
+  id            Int      @id @default(autoincrement())
+  code          String   @unique // short slug used in hledger tags, e.g. "J2026-014"
+  name          String
+  clientName    String?
+  contractValue Decimal?
+  retainagePct  Decimal  @default(0.10)
+  status        String   @default("active") // active | complete | archived
+  startDate     DateTime?
+  targetEndDate DateTime?
+  notes         String?
+
+  budgets      JobBudget[]
+  changeOrders ChangeOrder[]
+  billings     ProgressBilling[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CostCode {
+  id          Int    @id @default(autoincrement())
+  code        String @unique // e.g. "03-CONCRETE", "06-CARPENTRY"
+  name        String
+  csiDivision String?
+
+  budgets JobBudget[]
+}
+
+model JobBudget {
+  jobId          Int
+  costCodeId     Int
+  budgetedAmount Decimal
+  revisedEstimate Decimal? // CFO's revised remaining-cost estimate, if it diverges from budgetedAmount
+
+  job      Job      @relation(fields: [jobId], references: [id])
+  costCode CostCode @relation(fields: [costCodeId], references: [id])
+
+  @@id([jobId, costCodeId])
+}
+
+model ChangeOrder {
+  id           Int       @id @default(autoincrement())
+  jobId        Int
+  coNumber     String?
+  description  String?
+  amount       Decimal // can be negative
+  approvedDate DateTime?
+  status       String    @default("pending") // pending | approved | rejected
+
+  job Job @relation(fields: [jobId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model ProgressBilling {
+  id                  Int       @id @default(autoincrement())
+  jobId               Int
+  billingDate         DateTime?
+  periodLabel         String? // "Pay App #4"
+  amountBilled        Decimal
+  retainageWithheld   Decimal
+  pctCompleteEstimate Decimal? // CFO's own estimate for WIP calc
+  txnid               String?   @unique // links to the journal entry that recorded this billing
+
+  job Job @relation(fields: [jobId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+// Tracks every domain transaction (expense, payment, billing) that maps to a
+// journal entry, keyed by the txnid tag written into the journal file. Enables
+// idempotent edit/delete: look up the entry by txnid, not by re-parsing intent.
+model JournalTxn {
+  id        Int      @id @default(autoincrement())
+  txnid     String   @unique
+  jobId     Int?
+  kind      String // expense | payment | progress-billing
+  date      DateTime
+  amount    Decimal
+  memo      String?
+  createdAt DateTime @default(now())
+}
