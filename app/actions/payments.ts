@@ -58,6 +58,19 @@ export async function recordPayment(
   const data = parsed.data;
 
   try {
+    let billing = null;
+    if (data.billingId) {
+      billing = await prisma.progressBilling.findUnique({ where: { id: data.billingId } });
+      if (!billing) return fail(`Progress billing ${data.billingId} not found`);
+      const netBilled = new Decimal(billing.amountBilled).minus(billing.retainageWithheld);
+      const amountDue = netBilled.minus(billing.paidAmount);
+      if (new Decimal(data.amount).greaterThan(amountDue)) {
+        return fail(
+          `Payment (${formatUSD(data.amount)}) exceeds the amount due on this billing (${formatUSD(amountDue)})`,
+        );
+      }
+    }
+
     const { job, amount, entry } = await buildPaymentEntry(
       data.jobId,
       data.amount,
@@ -68,10 +81,34 @@ export async function recordPayment(
 
     const { txnid } = await recordTransaction(entry, `payment: ${job.code} ${formatUSD(amount)}`);
 
+    if (billing) {
+      const newPaidAmount = new Decimal(billing.paidAmount).plus(amount);
+      const netBilled = new Decimal(billing.amountBilled).minus(billing.retainageWithheld);
+      await prisma.paymentApplication.create({
+        data: { billingId: billing.id, amount: amount.toFixed(2), date: new Date(data.date), txnid },
+      });
+      await prisma.progressBilling.update({
+        where: { id: billing.id },
+        data: {
+          paidAmount: newPaidAmount.toFixed(2),
+          status: newPaidAmount.greaterThanOrEqualTo(netBilled) ? "paid" : "partial",
+        },
+      });
+    }
+
     revalidatePath(`/jobs/${job.id}`);
     return ok({ txnid });
   } catch (err) {
     return fail(actionErrorMessage(err));
+  }
+}
+
+async function assertPaymentEditable(txnid: string): Promise<void> {
+  const application = await prisma.paymentApplication.findUnique({ where: { txnid } });
+  if (application) {
+    throw new ActionError(
+      "Cannot change this payment — it's applied to a progress billing. Delete the application first.",
+    );
   }
 }
 
@@ -83,6 +120,8 @@ export async function editPayment(
   const data = parsed.data;
 
   try {
+    await assertPaymentEditable(data.txnid);
+
     const { job, amount, entry } = await buildPaymentEntry(
       data.jobId,
       data.amount,
@@ -105,6 +144,8 @@ export async function deletePayment(txnid: string): Promise<ActionResult<{ txnid
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
 
   try {
+    await assertPaymentEditable(txnid);
+
     const existing = await prisma.journalTxn.findUnique({ where: { txnid } });
     if (!existing) return fail(`No transaction found with txnid ${txnid}`);
 

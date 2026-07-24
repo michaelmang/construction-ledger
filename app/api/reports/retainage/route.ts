@@ -2,7 +2,7 @@ import { getRetainageAgingForActiveJobs } from "@/lib/reports";
 import { toCsv } from "@/lib/csv";
 
 export async function GET() {
-  const reports = await getRetainageAgingForActiveJobs();
+  const reports = await getRetainageAgingForActiveJobs(new Date(), ["active", "complete"]);
   const rows = reports.flatMap((r) =>
     r.billings.map((b) => [
       r.jobCode,

@@ -3,7 +3,7 @@ import { getWipScheduleForActiveJobs } from "@/lib/reports";
 import { Money } from "@/components/Money";
 
 export default async function WipReportPage() {
-  const rows = await getWipScheduleForActiveJobs();
+  const rows = await getWipScheduleForActiveJobs(["active", "complete"]);
 
   return (
     <div className="space-y-6">
@@ -29,6 +29,7 @@ export default async function WipReportPage() {
                 <th className="px-4 py-2 font-medium">Costs to Date</th>
                 <th className="px-4 py-2 font-medium">Est. Total Cost</th>
                 <th className="px-4 py-2 font-medium">% Complete</th>
+                <th className="px-4 py-2 font-medium">CFO % Est.</th>
                 <th className="px-4 py-2 font-medium">Earned Revenue</th>
                 <th className="px-4 py-2 font-medium">Billed to Date</th>
                 <th className="px-4 py-2 font-medium">Over/Under Billed</th>
@@ -53,6 +54,9 @@ export default async function WipReportPage() {
                     <Money value={r.wip.estimatedTotalCost} />
                   </td>
                   <td className="px-4 py-2">{r.wip.pctComplete.times(100).toFixed(1)}%</td>
+                  <td className="px-4 py-2 text-neutral-500">
+                    {r.cfoPctCompleteEstimate ? `${r.cfoPctCompleteEstimate.toFixed(1)}%` : "—"}
+                  </td>
                   <td className="px-4 py-2">
                     <Money value={r.wip.earnedRevenue} />
                   </td>

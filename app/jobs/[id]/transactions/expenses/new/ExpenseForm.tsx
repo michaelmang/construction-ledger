@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { recordExpense } from "@/app/actions/expenses";
+import { recordExpense, editExpense } from "@/app/actions/expenses";
 import { createVendor } from "@/app/actions/vendors";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 import { VendorPicker, VendorOption } from "@/components/VendorPicker";
@@ -13,24 +13,40 @@ interface CostCodeOption {
   name: string;
 }
 
+export interface ExpenseInitial {
+  txnid: string;
+  vendorId: number;
+  costCodeId: number;
+  amount: string; // pre-formatted "0.00"
+  retainageWithheld: string; // pre-formatted "0.00", "0.00" means none
+  date: string;
+  description: string;
+}
+
 export function ExpenseForm({
   jobId,
   costCodes,
   vendors,
+  initial,
 }: {
   jobId: number;
   costCodes: CostCodeOption[];
   vendors: VendorOption[];
+  initial?: ExpenseInitial;
 }) {
   const router = useRouter();
-  const [vendorSelection, setVendorSelection] = useState<number | "new" | "">("");
+  const [vendorSelection, setVendorSelection] = useState<number | "new" | "">(initial?.vendorId ?? "");
   const [newVendorName, setNewVendorName] = useState("");
-  const [costCodeId, setCostCodeId] = useState<number | "">("");
-  const [amount, setAmount] = useState("");
-  const [withholdRetainage, setWithholdRetainage] = useState(false);
-  const [retainageWithheld, setRetainageWithheld] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [description, setDescription] = useState("");
+  const [costCodeId, setCostCodeId] = useState<number | "">(initial?.costCodeId ?? "");
+  const [amount, setAmount] = useState(initial?.amount ?? "");
+  const [withholdRetainage, setWithholdRetainage] = useState(
+    initial ? Number(initial.retainageWithheld) > 0 : false,
+  );
+  const [retainageWithheld, setRetainageWithheld] = useState(
+    initial && Number(initial.retainageWithheld) > 0 ? initial.retainageWithheld : "",
+  );
+  const [date, setDate] = useState(initial?.date ?? (() => new Date().toISOString().slice(0, 10))());
+  const [description, setDescription] = useState(initial?.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -65,7 +81,7 @@ export function ExpenseForm({
       vendorId = vendorSelection;
     }
 
-    const result = await recordExpense({
+    const payload = {
       jobId,
       costCodeId,
       vendorId,
@@ -73,7 +89,11 @@ export function ExpenseForm({
       retainageWithheld: withholdRetainage && retainageWithheld ? retainageWithheld : undefined,
       date,
       description: description || undefined,
-    });
+    };
+
+    const result = initial
+      ? await editExpense({ ...payload, txnid: initial.txnid })
+      : await recordExpense(payload);
     if (!result.ok) {
       setError(result.error);
       setSubmitting(false);
@@ -158,7 +178,7 @@ export function ExpenseForm({
       )}
 
       <button type="submit" disabled={submitting} className={primaryButtonClass}>
-        {submitting ? "Recording…" : "Record Expense"}
+        {submitting ? "Saving…" : initial ? "Save Changes" : "Record Expense"}
       </button>
     </form>
   );

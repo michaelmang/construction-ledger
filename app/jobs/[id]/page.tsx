@@ -10,7 +10,7 @@ export default async function JobOverviewPage({
 }) {
   const { id } = await params;
   const jobId = Number(id);
-  const { wip, profitability } = await getJobProfitability(jobId);
+  const { wip, profitability, cfoPctCompleteEstimate } = await getJobProfitability(jobId);
 
   return (
     <div className="space-y-6">
@@ -38,6 +38,10 @@ export default async function JobOverviewPage({
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <Stat label="Revised Contract Value" value={wip.revisedContractValue} />
         <Stat label="% Complete" text={`${wip.pctComplete.times(100).toFixed(1)}%`} />
+        <Stat
+          label="CFO % Est."
+          text={cfoPctCompleteEstimate ? `${cfoPctCompleteEstimate.toFixed(1)}%` : "—"}
+        />
         <Stat label="Costs to Date" value={wip.costsToDate} />
         <Stat label="Estimated Total Cost" value={wip.estimatedTotalCost} />
         <Stat label="Earned Revenue" value={wip.earnedRevenue} />

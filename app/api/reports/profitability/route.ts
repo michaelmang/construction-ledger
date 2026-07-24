@@ -2,7 +2,7 @@ import { getProfitabilityForActiveJobs } from "@/lib/reports";
 import { toCsv } from "@/lib/csv";
 
 export async function GET() {
-  const rows = await getProfitabilityForActiveJobs();
+  const rows = await getProfitabilityForActiveJobs(["active", "complete"]);
 
   const csv = toCsv(
     [

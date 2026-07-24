@@ -6,6 +6,8 @@ import {
   computeCostCodeBreakdown,
   computeEstimatedTotalCost,
   computeRetainageAging,
+  computeArAging,
+  computeApAging,
 } from "@/lib/wip";
 
 const d = (v: string) => new Decimal(v);
@@ -65,6 +67,7 @@ describe("computeCostCodeBreakdown", () => {
   it("uses budgetedAmount when there is no revised estimate", () => {
     const [row] = computeCostCodeBreakdown([
       {
+        costCodeId: 1,
         costCode: "03-CONCRETE",
         costCodeName: "Concrete",
         budgetedAmount: d("42000"),
@@ -79,6 +82,7 @@ describe("computeCostCodeBreakdown", () => {
   it("prefers the revised estimate and reports negative remaining when over budget", () => {
     const [row] = computeCostCodeBreakdown([
       {
+        costCodeId: 1,
         costCode: "03-CONCRETE",
         costCodeName: "Concrete",
         budgetedAmount: d("42000"),
@@ -130,5 +134,83 @@ describe("computeRetainageAging", () => {
       asOf,
     );
     expect(row.daysOutstanding).toBe(0);
+  });
+});
+
+describe("computeArAging", () => {
+  it("computes amount due (net billed minus paid) and days outstanding", () => {
+    const asOf = new Date("2026-07-24T00:00:00Z");
+    const [row] = computeArAging(
+      [
+        {
+          billingId: 1,
+          periodLabel: "Pay App #1",
+          billingDate: new Date("2026-06-24T00:00:00Z"), // 30 days before asOf
+          netBilled: d("18000"),
+          paidAmount: d("5000"),
+        },
+      ],
+      asOf,
+    );
+    expect(row.amountDue.toFixed(2)).toBe("13000.00");
+    expect(row.daysOutstanding).toBe(30);
+  });
+
+  it("excludes fully paid billings", () => {
+    const asOf = new Date("2026-07-24T00:00:00Z");
+    const rows = computeArAging(
+      [
+        {
+          billingId: 1,
+          periodLabel: "Pay App #1",
+          billingDate: new Date("2026-06-24T00:00:00Z"),
+          netBilled: d("18000"),
+          paidAmount: d("18000"),
+        },
+      ],
+      asOf,
+    );
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe("computeApAging", () => {
+  it("computes amount due (amount minus retainage minus paid) and days outstanding", () => {
+    const asOf = new Date("2026-07-24T00:00:00Z");
+    const [row] = computeApAging(
+      [
+        {
+          billId: 1,
+          vendorName: "Ridge Framing Sub",
+          description: "Framing",
+          billDate: new Date("2026-06-14T00:00:00Z"), // 40 days before asOf
+          amount: d("8000"),
+          retainageWithheld: d("800"),
+          paidAmount: d("2000"),
+        },
+      ],
+      asOf,
+    );
+    expect(row.amountDue.toFixed(2)).toBe("5200.00");
+    expect(row.daysOutstanding).toBe(40);
+  });
+
+  it("excludes fully paid bills", () => {
+    const asOf = new Date("2026-07-24T00:00:00Z");
+    const rows = computeApAging(
+      [
+        {
+          billId: 1,
+          vendorName: "Vendor",
+          description: null,
+          billDate: new Date("2026-06-14T00:00:00Z"),
+          amount: d("1000"),
+          retainageWithheld: d("0"),
+          paidAmount: d("1000"),
+        },
+      ],
+      asOf,
+    );
+    expect(rows).toHaveLength(0);
   });
 });

@@ -7,10 +7,14 @@ import {
   computeCostCodeBreakdown,
   computeEstimatedTotalCost,
   computeRetainageAging,
+  computeArAging,
+  computeApAging,
   WipScheduleResult,
   JobProfitabilityResult,
   CostCodeBreakdownRow,
   RetainageAgingRow,
+  ArAgingRow,
+  ApAgingRow,
 } from "./wip";
 
 function toDecimal(value: unknown): Decimal {
@@ -63,6 +67,7 @@ async function jobBudgetsWithActuals(jobId: number, jobCode: string, costLines: 
   });
   const actuals = costByCostCode(jobCode, costLines);
   return budgets.map((b) => ({
+    costCodeId: b.costCodeId,
     costCode: b.costCode.code,
     costCodeName: b.costCode.name,
     budgetedAmount: toDecimal(b.budgetedAmount),
@@ -76,6 +81,15 @@ export interface JobWipReport {
   jobCode: string;
   jobName: string;
   wip: WipScheduleResult;
+  cfoPctCompleteEstimate: Decimal | null; // from the most recent billing, informational only (v2 spec §F4)
+}
+
+async function latestCfoPctCompleteEstimate(jobId: number): Promise<Decimal | null> {
+  const latest = await prisma.progressBilling.findFirst({
+    where: { jobId, pctCompleteEstimate: { not: null } },
+    orderBy: { billingDate: "desc" },
+  });
+  return latest?.pctCompleteEstimate ? toDecimal(latest.pctCompleteEstimate) : null;
 }
 
 export async function getWipSchedule(jobId: number): Promise<JobWipReport> {
@@ -92,19 +106,26 @@ export async function getWipSchedule(jobId: number): Promise<JobWipReport> {
     billedToDate: await billedToDate(job.id),
   });
 
-  return { jobId: job.id, jobCode: job.code, jobName: job.name, wip };
+  return {
+    jobId: job.id,
+    jobCode: job.code,
+    jobName: job.name,
+    wip,
+    cfoPctCompleteEstimate: await latestCfoPctCompleteEstimate(job.id),
+  };
 }
 
-export async function getWipScheduleForActiveJobs(): Promise<JobWipReport[]> {
-  const jobs = await prisma.job.findMany({ where: { status: "active" } });
+// Defaults to active-only for the dashboard; report pages pass
+// ["active", "complete"] so closed jobs stay reviewable without cluttering
+// the dashboard (v2 spec §F12).
+export async function getWipScheduleForActiveJobs(
+  statuses: string[] = ["active"],
+): Promise<JobWipReport[]> {
+  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
   return Promise.all(jobs.map((j) => getWipSchedule(j.id)));
 }
 
-export interface JobProfitabilityReport {
-  jobId: number;
-  jobCode: string;
-  jobName: string;
-  wip: WipScheduleResult;
+export interface JobProfitabilityReport extends JobWipReport {
   profitability: JobProfitabilityResult;
 }
 
@@ -114,15 +135,18 @@ export async function getJobProfitability(jobId: number): Promise<JobProfitabili
   return { ...report, profitability };
 }
 
-export async function getProfitabilityForActiveJobs(): Promise<JobProfitabilityReport[]> {
-  const jobs = await prisma.job.findMany({ where: { status: "active" } });
+export async function getProfitabilityForActiveJobs(
+  statuses: string[] = ["active"],
+): Promise<JobProfitabilityReport[]> {
+  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
   return Promise.all(jobs.map((j) => getJobProfitability(j.id)));
 }
 
 export async function getRetainageAgingForActiveJobs(
   asOf: Date = new Date(),
+  statuses: string[] = ["active"],
 ): Promise<RetainageAgingReport[]> {
-  const jobs = await prisma.job.findMany({ where: { status: "active" } });
+  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
   return Promise.all(jobs.map((j) => getRetainageAging(j.id, asOf)));
 }
 
@@ -204,4 +228,67 @@ export async function getCashPositionSummary(): Promise<CashPositionSummary> {
     liabilitiesTotal: liabilities.total,
     netCash: assets.total.plus(liabilities.total),
   };
+}
+
+export interface JobArAgingReport {
+  jobId: number;
+  jobCode: string;
+  jobName: string;
+  rows: ArAgingRow[];
+}
+
+// Per-job AR aging: what's still owed on each progress billing, net of
+// retainage and any payments already applied (v2 spec §F10).
+export async function getArAging(jobId: number, asOf: Date = new Date()): Promise<JobArAgingReport> {
+  const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
+  const billings = await prisma.progressBilling.findMany({
+    where: { jobId, billingDate: { not: null } },
+  });
+
+  return {
+    jobId: job.id,
+    jobCode: job.code,
+    jobName: job.name,
+    rows: computeArAging(
+      billings.map((b) => ({
+        billingId: b.id,
+        periodLabel: b.periodLabel,
+        billingDate: b.billingDate as Date,
+        netBilled: toDecimal(b.amountBilled).minus(b.retainageWithheld),
+        paidAmount: toDecimal(b.paidAmount),
+      })),
+      asOf,
+    ),
+  };
+}
+
+export async function getArAgingForActiveJobs(
+  asOf: Date = new Date(),
+  statuses: string[] = ["active"],
+): Promise<JobArAgingReport[]> {
+  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
+  return Promise.all(jobs.map((j) => getArAging(j.id, asOf)));
+}
+
+// Whole-business AP aging: what's still owed on every open/partial bill
+// (job-cost and overhead alike), net of retainage withheld and payments made
+// (v2 spec §F6).
+export async function getApAging(asOf: Date = new Date()): Promise<ApAgingRow[]> {
+  const bills = await prisma.bill.findMany({
+    where: { status: { in: ["open", "partial"] } },
+    include: { vendor: true },
+  });
+
+  return computeApAging(
+    bills.map((b) => ({
+      billId: b.id,
+      vendorName: b.vendor.name,
+      description: b.description,
+      billDate: b.date,
+      amount: toDecimal(b.amount),
+      retainageWithheld: toDecimal(b.retainageWithheld),
+      paidAmount: toDecimal(b.paidAmount),
+    })),
+    asOf,
+  );
 }

@@ -3,7 +3,7 @@ import { getProfitabilityForActiveJobs } from "@/lib/reports";
 import { Money } from "@/components/Money";
 
 export default async function ProfitabilityReportPage() {
-  const rows = await getProfitabilityForActiveJobs();
+  const rows = await getProfitabilityForActiveJobs(["active", "complete"]);
 
   return (
     <div className="space-y-6">

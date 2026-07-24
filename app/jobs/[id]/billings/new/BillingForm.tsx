@@ -4,16 +4,37 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Decimal from "decimal.js";
-import { createProgressBilling } from "@/app/actions/billings";
+import { createProgressBilling, editProgressBilling } from "@/app/actions/billings";
 import { formatUSD } from "@/lib/money";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 
-export function BillingForm({ jobId, retainagePct }: { jobId: number; retainagePct: string }) {
+export interface BillingInitial {
+  id: number;
+  txnid: string;
+  amountBilled: string; // pre-formatted "0.00"
+  retainageWithheld: string; // pre-formatted "0.00"
+  billingDate: string;
+  periodLabel: string;
+  pctCompleteEstimate: string; // pre-formatted, "" means none
+}
+
+export function BillingForm({
+  jobId,
+  retainagePct,
+  initial,
+}: {
+  jobId: number;
+  retainagePct: string;
+  initial?: BillingInitial;
+}) {
   const router = useRouter();
-  const [amountBilled, setAmountBilled] = useState("");
-  const [retainageOverride, setRetainageOverride] = useState("");
-  const [billingDate, setBillingDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [periodLabel, setPeriodLabel] = useState("");
+  const [amountBilled, setAmountBilled] = useState(initial?.amountBilled ?? "");
+  const [retainageOverride, setRetainageOverride] = useState(initial?.retainageWithheld ?? "");
+  const [billingDate, setBillingDate] = useState(
+    initial?.billingDate ?? (() => new Date().toISOString().slice(0, 10))(),
+  );
+  const [periodLabel, setPeriodLabel] = useState(initial?.periodLabel ?? "");
+  const [pctCompleteEstimate, setPctCompleteEstimate] = useState(initial?.pctCompleteEstimate ?? "");
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -37,13 +58,18 @@ export function BillingForm({ jobId, retainagePct }: { jobId: number; retainageP
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    const result = await createProgressBilling({
+
+    const payload = {
       jobId,
       billingDate,
       periodLabel: periodLabel || undefined,
       amountBilled,
       retainageWithheld: retainageOverride || undefined,
-    });
+      pctCompleteEstimate: pctCompleteEstimate || undefined,
+    };
+    const result = initial
+      ? await editProgressBilling({ ...payload, id: initial.id, txnid: initial.txnid })
+      : await createProgressBilling(payload);
     if (!result.ok) {
       setError(result.error);
       setSubmitting(false);
@@ -63,7 +89,9 @@ export function BillingForm({ jobId, retainagePct }: { jobId: number; retainageP
   if (warning) {
     return (
       <div className="max-w-lg space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-6">
-        <p className="text-sm font-medium text-amber-800">Progress billing created.</p>
+        <p className="text-sm font-medium text-amber-800">
+          Progress billing {initial ? "updated" : "created"}.
+        </p>
         <p className="text-sm text-amber-700">{warning}</p>
         <Link
           href={`/jobs/${jobId}/billings`}
@@ -123,6 +151,18 @@ export function BillingForm({ jobId, retainagePct }: { jobId: number; retainageP
           onChange={(e) => setRetainageOverride(e.target.value)}
         />
       </Field>
+      <Field
+        label="Your % Complete Estimate"
+        hint="optional — your own read on progress, shown beside the cost-basis % on the WIP report"
+      >
+        <input
+          className={inputClass}
+          inputMode="decimal"
+          placeholder="e.g. 45"
+          value={pctCompleteEstimate}
+          onChange={(e) => setPctCompleteEstimate(e.target.value)}
+        />
+      </Field>
 
       {computedRetainage !== null && netAfterRetainage !== null && (
         <div className="rounded-md bg-neutral-50 px-4 py-3 text-sm">
@@ -138,7 +178,7 @@ export function BillingForm({ jobId, retainagePct }: { jobId: number; retainageP
       )}
 
       <button type="submit" disabled={submitting} className={primaryButtonClass}>
-        {submitting ? "Creating…" : "Create Progress Billing"}
+        {submitting ? "Saving…" : initial ? "Save Changes" : "Create Progress Billing"}
       </button>
     </form>
   );

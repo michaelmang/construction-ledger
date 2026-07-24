@@ -16,6 +16,16 @@ const reports = [
     title: "Retainage Aging",
     description: "What's withheld on each progress billing, and how long it's been outstanding.",
   },
+  {
+    href: "/reports/ar-aging",
+    title: "AR Aging",
+    description: "What clients still owe on each progress billing, net of retainage and payments.",
+  },
+  {
+    href: "/reports/ap-aging",
+    title: "AP Aging",
+    description: "What's still owed on every open vendor bill, across jobs and overhead.",
+  },
 ];
 
 export default function ReportsPage() {

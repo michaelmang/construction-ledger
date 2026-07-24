@@ -36,6 +36,12 @@ export const createJobSchema = z.object({
 });
 export type CreateJobInput = z.infer<typeof createJobSchema>;
 
+export const setJobStatusSchema = z.object({
+  jobId: z.number().int().positive(),
+  status: z.enum(["active", "complete", "archived"]),
+});
+export type SetJobStatusInput = z.infer<typeof setJobStatusSchema>;
+
 export const createCostCodeSchema = z.object({
   code: z.string().min(1, "Cost code is required"),
   name: z.string().min(1, "Cost code name is required"),
@@ -47,6 +53,9 @@ export const setBudgetSchema = z.object({
   jobId: z.number().int().positive(),
   costCodeId: z.number().int().positive(),
   budgetedAmount: decimalAmount,
+  // null explicitly clears a previously-set revised estimate, reverting to
+  // budgetedAmount; undefined leaves whatever is already stored untouched.
+  revisedEstimate: z.union([decimalAmount, z.null()]).optional(),
 });
 export type SetBudgetInput = z.infer<typeof setBudgetSchema>;
 
@@ -107,6 +116,7 @@ export const recordPaymentSchema = z.object({
   date: isoDate,
   cashAccount: z.string().min(1).optional(), // defaults to "checking"
   memo: z.string().optional(),
+  billingId: z.number().int().positive().optional(), // apply to a specific progress billing (v2 spec §F10)
 });
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 

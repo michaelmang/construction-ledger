@@ -1,5 +1,6 @@
 import { getCostCodeBreakdown } from "@/lib/reports";
-import { Money } from "@/components/Money";
+import { listCostCodes } from "@/lib/queries";
+import { CostCodeGrid } from "./CostCodeGrid";
 
 export default async function JobCostCodesPage({
   params,
@@ -7,47 +8,36 @@ export default async function JobCostCodesPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const rows = await getCostCodeBreakdown(Number(id));
+  const jobId = Number(id);
+  const [rows, allCostCodes] = await Promise.all([
+    getCostCodeBreakdown(jobId),
+    listCostCodes(),
+  ]);
 
-  if (rows.length === 0) {
-    return <p className="text-neutral-500">No cost code budgets set for this job yet.</p>;
-  }
+  const budgetedIds = new Set(rows.map((r) => r.costCodeId));
+  const available = allCostCodes.filter((cc) => !budgetedIds.has(cc.id));
+
+  const gridRows = rows.map((r) => ({
+    costCodeId: r.costCodeId,
+    costCode: r.costCode,
+    costCodeName: r.costCodeName,
+    budgeted: r.budgeted.toFixed(2),
+    estimatedAtCompletion: r.estimatedAtCompletion.toFixed(2),
+    actual: r.actual.toFixed(2),
+    remaining: r.remaining.toFixed(2),
+  }));
 
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-      <table className="w-full text-sm">
-        <thead className="bg-neutral-50 text-left text-neutral-500">
-          <tr>
-            <th className="px-4 py-2 font-medium">Cost Code</th>
-            <th className="px-4 py-2 font-medium">Budgeted</th>
-            <th className="px-4 py-2 font-medium">Est. at Completion</th>
-            <th className="px-4 py-2 font-medium">Actual</th>
-            <th className="px-4 py-2 font-medium">Remaining</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-neutral-100">
-          {rows.map((row) => (
-            <tr key={row.costCode}>
-              <td className="px-4 py-2">
-                <div className="font-medium">{row.costCodeName}</div>
-                <div className="text-xs text-neutral-500">{row.costCode}</div>
-              </td>
-              <td className="px-4 py-2">
-                <Money value={row.budgeted} />
-              </td>
-              <td className="px-4 py-2">
-                <Money value={row.estimatedAtCompletion} />
-              </td>
-              <td className="px-4 py-2">
-                <Money value={row.actual} />
-              </td>
-              <td className="px-4 py-2">
-                <Money value={row.remaining} colorize />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      <p className="text-sm text-neutral-500">
+        Edit the revised estimate as costs firm up — the WIP schedule recomputes from
+        whatever you save here.
+      </p>
+      {rows.length === 0 && available.length === 0 ? (
+        <p className="text-neutral-500">No cost codes exist yet.</p>
+      ) : (
+        <CostCodeGrid jobId={jobId} rows={gridRows} available={available} />
+      )}
     </div>
   );
 }

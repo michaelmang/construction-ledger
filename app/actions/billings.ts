@@ -133,6 +133,9 @@ export async function editProgressBilling(
     const existing = await prisma.progressBilling.findUnique({ where: { id: data.id } });
     if (!existing) return fail(`Progress billing ${data.id} not found`);
     if (existing.txnid !== data.txnid) return fail("txnid does not match this billing record");
+    if (existing.paidAmount.greaterThan(0)) {
+      return fail("Cannot change this billing — a payment has already been applied to it");
+    }
 
     const { job, amountBilled, retainageWithheld, entry } = await buildBillingEntry(
       data.jobId,
@@ -171,6 +174,9 @@ export async function deleteProgressBilling(id: number): Promise<ActionResult<{ 
     const existing = await prisma.progressBilling.findUnique({ where: { id } });
     if (!existing) return fail(`Progress billing ${id} not found`);
     if (!existing.txnid) return fail(`Progress billing ${id} has no linked journal entry`);
+    if (existing.paidAmount.greaterThan(0)) {
+      return fail("Cannot delete this billing — a payment has already been applied to it");
+    }
 
     await removeTransaction(
       existing.txnid,

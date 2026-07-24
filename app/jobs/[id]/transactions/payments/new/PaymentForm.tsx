@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { recordPayment } from "@/app/actions/payments";
+import { recordPayment, editPayment } from "@/app/actions/payments";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 
 interface CashAccountOption {
@@ -11,34 +11,66 @@ interface CashAccountOption {
   isDefault: boolean;
 }
 
+interface UnpaidBillingOption {
+  id: number;
+  periodLabel: string | null;
+  amountDue: string; // pre-formatted "0.00"
+}
+
+export interface PaymentInitial {
+  txnid: string;
+  amount: string;
+  date: string;
+  cashAccount: string;
+  memo: string;
+}
+
 export function PaymentForm({
   jobId,
   cashAccounts,
+  unpaidBillings,
+  initial,
 }: {
   jobId: number;
   cashAccounts: CashAccountOption[];
+  unpaidBillings: UnpaidBillingOption[];
+  initial?: PaymentInitial;
 }) {
   const router = useRouter();
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [memo, setMemo] = useState("");
+  const [amount, setAmount] = useState(initial?.amount ?? "");
+  const [date, setDate] = useState(initial?.date ?? (() => new Date().toISOString().slice(0, 10))());
+  const [memo, setMemo] = useState(initial?.memo ?? "");
+  const [billingId, setBillingId] = useState<number | "">("");
   const [cashAccount, setCashAccount] = useState(
-    () => cashAccounts.find((a) => a.isDefault)?.name ?? cashAccounts[0]?.name ?? "checking",
+    () =>
+      initial?.cashAccount ??
+      cashAccounts.find((a) => a.isDefault)?.name ??
+      cashAccounts[0]?.name ??
+      "checking",
   );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const selectedBilling = useMemo(
+    () => unpaidBillings.find((b) => b.id === billingId),
+    [billingId, unpaidBillings],
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    const result = await recordPayment({
-      jobId,
-      amount,
-      date,
-      cashAccount,
-      memo: memo || undefined,
-    });
+
+    const result = initial
+      ? await editPayment({ jobId, amount, date, cashAccount, memo: memo || undefined, txnid: initial.txnid })
+      : await recordPayment({
+          jobId,
+          amount,
+          date,
+          cashAccount,
+          memo: memo || undefined,
+          billingId: billingId || undefined,
+        });
     if (!result.ok) {
       setError(result.error);
       setSubmitting(false);
@@ -58,6 +90,27 @@ export function PaymentForm({
           {error}
         </div>
       )}
+      {!initial && unpaidBillings.length > 0 && (
+        <Field label="Apply To" hint="optional — links this payment to a specific pay app for AR aging">
+          <select
+            className={inputClass}
+            value={billingId}
+            onChange={(e) => {
+              const id = e.target.value ? Number(e.target.value) : "";
+              setBillingId(id);
+              const billing = unpaidBillings.find((b) => b.id === id);
+              if (billing) setAmount(billing.amountDue);
+            }}
+          >
+            <option value="">General payment (not tied to a pay app)</option>
+            {unpaidBillings.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.periodLabel ?? `Billing #${b.id}`} — due {b.amountDue}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Amount">
         <input
           className={inputClass}
@@ -68,6 +121,9 @@ export function PaymentForm({
           required
         />
       </Field>
+      {selectedBilling && (
+        <p className="text-xs text-neutral-500">Amount due on this billing: {selectedBilling.amountDue}</p>
+      )}
       <Field label="Date">
         <input
           type="date"
@@ -94,7 +150,7 @@ export function PaymentForm({
         <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
       </Field>
       <button type="submit" disabled={submitting} className={primaryButtonClass}>
-        {submitting ? "Recording…" : "Record Payment"}
+        {submitting ? "Saving…" : initial ? "Save Changes" : "Record Payment"}
       </button>
     </form>
   );

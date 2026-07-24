@@ -7,9 +7,11 @@ import {
   createJobSchema,
   createCostCodeSchema,
   setBudgetSchema,
+  setJobStatusSchema,
   CreateJobInput,
   CreateCostCodeInput,
   SetBudgetInput,
+  SetJobStatusInput,
 } from "@/lib/validation";
 
 export async function createJob(input: CreateJobInput): Promise<ActionResult<{ id: number }>> {
@@ -75,12 +77,34 @@ export async function setBudget(input: SetBudgetInput): Promise<ActionResult<{ j
       jobId: data.jobId,
       costCodeId: data.costCodeId,
       budgetedAmount: data.budgetedAmount,
+      revisedEstimate: data.revisedEstimate ?? undefined,
     },
-    update: { budgetedAmount: data.budgetedAmount },
+    update: {
+      budgetedAmount: data.budgetedAmount,
+      ...(data.revisedEstimate !== undefined ? { revisedEstimate: data.revisedEstimate } : {}),
+    },
   });
 
   revalidatePath(`/jobs/${data.jobId}`);
   return ok({ jobId: data.jobId, costCodeId: data.costCodeId });
+}
+
+export async function setJobStatus(
+  input: SetJobStatusInput,
+): Promise<ActionResult<{ jobId: number; status: string }>> {
+  const parsed = setJobStatusSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
+  const data = parsed.data;
+
+  const job = await prisma.job.findUnique({ where: { id: data.jobId } });
+  if (!job) return fail(`Job ${data.jobId} not found`);
+
+  await prisma.job.update({ where: { id: data.jobId }, data: { status: data.status } });
+
+  revalidatePath(`/jobs/${data.jobId}`);
+  revalidatePath("/jobs");
+  revalidatePath("/");
+  return ok({ jobId: data.jobId, status: data.status });
 }
 
 function prismaErrorMessage(err: unknown, uniqueConstraintMessage: string): string {

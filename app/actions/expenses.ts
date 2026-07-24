@@ -76,7 +76,7 @@ async function buildExpenseEntry(
       jobId: job.id,
       date,
       description: description ? `${vendor.name} - ${description}` : vendor.name,
-      tags: { job: job.code, code: costCode.code },
+      tags: { job: job.code, code: costCode.code, vendor: vendorSlug },
       postings,
       amount,
       memo: `${vendor.name}${description ? " - " + description : ""}`,

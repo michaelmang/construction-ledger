@@ -3,7 +3,7 @@ import { getRetainageAgingForActiveJobs } from "@/lib/reports";
 import { Money } from "@/components/Money";
 
 export default async function RetainageReportPage() {
-  const reports = await getRetainageAgingForActiveJobs();
+  const reports = await getRetainageAgingForActiveJobs(new Date(), ["active", "complete"]);
   const rows = reports.flatMap((r) =>
     r.billings.map((b) => ({
       jobId: r.jobId,

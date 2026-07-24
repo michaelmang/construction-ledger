@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import { prisma } from "./db";
-import { register, RegisterEntry } from "./hledger";
+import { print } from "./hledger";
+import { humanizeAccount } from "./accounts";
 
 export async function listJobs() {
   return prisma.job.findMany({ orderBy: { createdAt: "desc" } });
@@ -33,9 +34,47 @@ export async function listBillings(jobId: number) {
   });
 }
 
-export async function getJobTransactions(jobCode: string): Promise<RegisterEntry[]> {
-  const entries = await register([`tag:job=${jobCode}`]);
-  return [...entries].reverse(); // most recent first
+export async function listUnpaidBillings(jobId: number) {
+  return prisma.progressBilling.findMany({
+    where: { jobId, status: { in: ["unpaid", "partial"] } },
+    orderBy: { billingDate: "asc" },
+  });
+}
+
+export interface JobTransactionGroup {
+  txnid: string | null;
+  date: string;
+  description: string;
+  kind: string | null; // from JournalTxn, so the UI knows which edit/delete action applies
+  postings: { account: string; humanizedAccount: string; amount: Decimal }[];
+}
+
+// One row per transaction (not per posting), so the Transactions tab can
+// offer a single Edit/Delete action per entry (v2 spec §F11) instead of one
+// per posting line. Extra hledger query terms (date range, cost code,
+// vendor) narrow the result (v2 spec §F14).
+export async function getJobTransactionsGrouped(
+  jobCode: string,
+  extraQueryTerms: string[] = [],
+): Promise<JobTransactionGroup[]> {
+  const entries = await print([`tag:job=${jobCode}`, ...extraQueryTerms]);
+  const txnids = entries.map((e) => e.tags.txnid).filter((t): t is string => Boolean(t));
+  const journalTxns = await prisma.journalTxn.findMany({ where: { txnid: { in: txnids } } });
+  const kindByTxnid = new Map(journalTxns.map((t) => [t.txnid, t.kind]));
+
+  const groups = entries.map((e) => ({
+    txnid: e.tags.txnid ?? null,
+    date: e.date,
+    description: e.description,
+    kind: e.tags.txnid ? (kindByTxnid.get(e.tags.txnid) ?? null) : null,
+    postings: e.postings.map((p) => ({
+      account: p.account,
+      humanizedAccount: humanizeAccount(p.account),
+      amount: p.amount,
+    })),
+  }));
+
+  return groups.reverse(); // most recent first
 }
 
 export async function listVendors() {

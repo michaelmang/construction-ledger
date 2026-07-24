@@ -59,6 +59,7 @@ export function computeJobProfitability(
 }
 
 export interface CostCodeBudgetInput {
+  costCodeId: number;
   costCode: string;
   costCodeName: string;
   budgetedAmount: Decimal;
@@ -67,6 +68,7 @@ export interface CostCodeBudgetInput {
 }
 
 export interface CostCodeBreakdownRow {
+  costCodeId: number;
   costCode: string;
   costCodeName: string;
   budgeted: Decimal;
@@ -81,6 +83,7 @@ export function computeCostCodeBreakdown(
   return budgets.map((b) => {
     const estimatedAtCompletion = b.revisedEstimate ?? b.budgetedAmount;
     return {
+      costCodeId: b.costCodeId,
       costCode: b.costCode,
       costCodeName: b.costCodeName,
       budgeted: b.budgetedAmount,
@@ -126,4 +129,70 @@ export function computeRetainageAging(
       Math.floor((asOf.getTime() - b.billingDate.getTime()) / MS_PER_DAY),
     ),
   }));
+}
+
+function daysOutstanding(since: Date, asOf: Date): number {
+  return Math.max(0, Math.floor((asOf.getTime() - since.getTime()) / MS_PER_DAY));
+}
+
+export interface ArAgingInput {
+  billingId: number;
+  periodLabel: string | null;
+  billingDate: Date;
+  netBilled: Decimal; // amountBilled - retainageWithheld
+  paidAmount: Decimal;
+}
+
+export interface ArAgingRow {
+  billingId: number;
+  periodLabel: string | null;
+  billingDate: Date;
+  amountDue: Decimal;
+  daysOutstanding: number;
+}
+
+// Only billings with a nonzero balance appear — a fully paid pay app isn't
+// "aging" (v2 spec §F10).
+export function computeArAging(billings: ArAgingInput[], asOf: Date): ArAgingRow[] {
+  return billings
+    .map((b) => ({
+      billingId: b.billingId,
+      periodLabel: b.periodLabel,
+      billingDate: b.billingDate,
+      amountDue: b.netBilled.minus(b.paidAmount),
+      daysOutstanding: daysOutstanding(b.billingDate, asOf),
+    }))
+    .filter((r) => !r.amountDue.isZero());
+}
+
+export interface ApAgingInput {
+  billId: number;
+  vendorName: string;
+  description: string | null;
+  billDate: Date;
+  amount: Decimal;
+  retainageWithheld: Decimal;
+  paidAmount: Decimal;
+}
+
+export interface ApAgingRow {
+  billId: number;
+  vendorName: string;
+  description: string | null;
+  billDate: Date;
+  amountDue: Decimal;
+  daysOutstanding: number;
+}
+
+export function computeApAging(bills: ApAgingInput[], asOf: Date): ApAgingRow[] {
+  return bills
+    .map((b) => ({
+      billId: b.billId,
+      vendorName: b.vendorName,
+      description: b.description,
+      billDate: b.billDate,
+      amountDue: b.amount.minus(b.retainageWithheld).minus(b.paidAmount),
+      daysOutstanding: daysOutstanding(b.billDate, asOf),
+    }))
+    .filter((r) => !r.amountDue.isZero());
 }

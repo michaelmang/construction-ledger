@@ -76,10 +76,25 @@ model ProgressBilling {
   periodLabel         String? // "Pay App #4"
   amountBilled        Decimal
   retainageWithheld   Decimal
+  paidAmount          Decimal   @default(0) // applied via PaymentApplication (v2 spec §F10)
+  status              String    @default("unpaid") // unpaid | partial | paid
   pctCompleteEstimate Decimal? // CFO's own estimate for WIP calc
   txnid               String?   @unique // links to the journal entry that recorded this billing
 
-  job Job @relation(fields: [jobId], references: [id])
+  job      Job                   @relation(fields: [jobId], references: [id])
+  payments PaymentApplication[]
+
+  createdAt DateTime @default(now())
+}
+
+model PaymentApplication {
+  id        Int      @id @default(autoincrement())
+  billingId Int
+  amount    Decimal
+  date      DateTime
+  txnid     String   @unique // the payment journal entry
+
+  billing ProgressBilling @relation(fields: [billingId], references: [id])
 
   createdAt DateTime @default(now())
 }
