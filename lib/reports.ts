@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import { prisma } from "./db";
 import { balance, BalanceLine } from "./hledger";
+import { COST_TYPES } from "./cost-types";
 import {
   computeWipSchedule,
   computeJobProfitability,
@@ -9,12 +10,18 @@ import {
   computeRetainageAging,
   computeArAging,
   computeApAging,
+  computeCostTypePivot,
+  computeCostTypePivotByJob,
   WipScheduleResult,
   JobProfitabilityResult,
   CostCodeBreakdownRow,
   RetainageAgingRow,
   ArAgingRow,
   ApAgingRow,
+  CostTypePivotRow,
+  JobCostTypePivotRow,
+  CostTypePivotAmount,
+  CostTypeBucket,
 } from "./wip";
 
 function toDecimal(value: unknown): Decimal {
@@ -155,6 +162,97 @@ export async function getCostCodeBreakdown(jobId: number): Promise<CostCodeBreak
   const { lines } = await costsToDateLines(job.code);
   const budgets = await jobBudgetsWithActuals(job.id, job.code, lines);
   return computeCostCodeBreakdown(budgets);
+}
+
+// Bucket key for entries with no costtype tag (pre-v3-backfill), never
+// silently folded into "other" — a nonzero value is the signal that the
+// backfill migration (v3 build instructions Phase 4) hasn't run yet.
+const UNTYPED: CostTypeBucket = "untyped";
+
+interface CostTypeAccountAmount {
+  costCode: string;
+  costType: CostTypeBucket;
+  amount: Decimal;
+}
+
+// One hledger balance call per cost type (5) plus one for "untyped" (entries
+// with no costtype tag at all, queried via `not:tag:costtype`) — cheap at
+// this app's scale, and keeps each call a simple account-balance query
+// rather than parsing `print` output (v3 build instructions Phase 3).
+async function costTypeAmountsForJob(jobCode: string): Promise<CostTypeAccountAmount[]> {
+  const perType = await Promise.all(
+    COST_TYPES.map(async (t) => ({ type: t, lines: (await balance([`tag:job=${jobCode}`, `tag:costtype=${t}`, "type:x"])).lines })),
+  );
+  const untyped = await balance([`tag:job=${jobCode}`, "not:tag:costtype", "type:x"]);
+
+  const prefix = `expenses:jobs:${jobCode}:`;
+  const amounts: CostTypeAccountAmount[] = [];
+  function collect(lines: BalanceLine[], costType: CostTypeBucket) {
+    for (const line of lines) {
+      if (!line.account.startsWith(prefix)) continue;
+      amounts.push({ costCode: line.account.slice(prefix.length), costType, amount: line.amount });
+    }
+  }
+  for (const { type, lines } of perType) collect(lines, type);
+  collect(untyped.lines, UNTYPED);
+  return amounts;
+}
+
+// Cost code x cost type pivot for a single job's Cost Codes tab (v3 spec
+// §F17/§F19). Only cost codes with a JobBudget row appear, matching
+// getCostCodeBreakdown's existing convention.
+export async function getCostTypePivotForJob(jobId: number): Promise<CostTypePivotRow[]> {
+  const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
+  const budgets = await prisma.jobBudget.findMany({ where: { jobId }, include: { costCode: true } });
+  const raw = await costTypeAmountsForJob(job.code);
+
+  const idByCode = new Map(budgets.map((b) => [b.costCode.code, b.costCodeId]));
+  const amounts: CostTypePivotAmount[] = raw
+    .map((r) => {
+      const costCodeId = idByCode.get(r.costCode);
+      return costCodeId ? { key: costCodeId, costType: r.costType, amount: r.amount } : null;
+    })
+    .filter((a): a is CostTypePivotAmount => a !== null);
+
+  const costCodes = budgets.map((b) => ({
+    costCodeId: b.costCodeId,
+    costCode: b.costCode.code,
+    costCodeName: b.costCode.name,
+  }));
+  return computeCostTypePivot(costCodes, amounts);
+}
+
+// Company-wide job x cost type pivot (v3 spec §F19: "is Concrete over budget
+// company-wide, or just this job"). Job code is parsed straight out of the
+// account path (expenses:jobs:<job>:<code>), so this is 6 hledger calls
+// total, not 6 per job.
+export async function getCostTypePivotByJob(
+  statuses: string[] = ["active", "complete"],
+): Promise<JobCostTypePivotRow[]> {
+  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
+  const jobByCode = new Map(jobs.map((j) => [j.code, j]));
+  const jobAccountRe = /^expenses:jobs:([^:]+):/;
+
+  const perType = await Promise.all(
+    COST_TYPES.map(async (t) => ({ type: t, lines: (await balance([`tag:costtype=${t}`, "type:x"])).lines })),
+  );
+  const untyped = await balance(["not:tag:costtype", "type:x"]);
+
+  const amounts: CostTypePivotAmount[] = [];
+  function collect(lines: BalanceLine[], costType: CostTypeBucket) {
+    for (const line of lines) {
+      const match = line.account.match(jobAccountRe);
+      if (!match) continue;
+      const job = jobByCode.get(match[1]);
+      if (!job) continue;
+      amounts.push({ key: job.id, costType, amount: line.amount });
+    }
+  }
+  for (const { type, lines } of perType) collect(lines, type);
+  collect(untyped.lines, UNTYPED);
+
+  const jobRows = jobs.map((j) => ({ jobId: j.id, jobCode: j.code, jobName: j.name }));
+  return computeCostTypePivotByJob(jobRows, amounts);
 }
 
 export interface RetainageAgingReport {
@@ -391,16 +489,33 @@ export interface DashboardSummary {
   totalArOutstanding: Decimal;
   totalApOutstanding: Decimal;
   totalRetainageHeld: Decimal; // retainage payable + retainage receivable, across active jobs
+  laborPercentOfRevenue: Decimal; // company-wide labor cost / total revenue recognized, as a percentage (v3 spec §F19)
+}
+
+// Company-wide labor cost as a percentage of revenue recognized to date — a
+// margin-risk signal (v3 spec §F19: labor-heavy jobs carry different
+// risk/margin than subbed-out scope). Income postings are credit-signed
+// (negative) per lib/accounts.ts's incomeJob(), so revenue is the absolute
+// value of the income balance.
+export async function getLaborPercentOfRevenue(): Promise<Decimal> {
+  const [labor, income] = await Promise.all([
+    balance(["tag:costtype=labor", "type:x"]),
+    balance(["type:R"]),
+  ]);
+  const revenue = income.total.abs();
+  if (revenue.isZero()) return new Decimal(0);
+  return labor.total.dividedBy(revenue).times(100);
 }
 
 // Aggregate figures for the dashboard hero row beyond the plain cash tile
 // (v2 spec §F15).
 export async function getDashboardSummary(): Promise<DashboardSummary> {
-  const [wipReports, arReports, apRows, retainageReports] = await Promise.all([
+  const [wipReports, arReports, apRows, retainageReports, laborPercentOfRevenue] = await Promise.all([
     getWipScheduleForActiveJobs(),
     getArAgingForActiveJobs(),
     getApAging(),
     getRetainageAgingForActiveJobs(),
+    getLaborPercentOfRevenue(),
   ]);
 
   const totalOverUnderBilling = wipReports.reduce(
@@ -417,5 +532,45 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     new Decimal(0),
   );
 
-  return { totalOverUnderBilling, totalArOutstanding, totalApOutstanding, totalRetainageHeld };
+  return {
+    totalOverUnderBilling,
+    totalArOutstanding,
+    totalApOutstanding,
+    totalRetainageHeld,
+    laborPercentOfRevenue,
+  };
+}
+
+export interface LaborPercentTrendPoint {
+  month: string; // YYYY-MM
+  laborPct: number; // 0 when that month had no revenue (guard div-by-zero, not a misleading spike)
+}
+
+// Monthly labor-cost-as-%-of-revenue for the dashboard trend chart (v3 spec
+// §F19). Same cumulative-sample-then-delta approach as getJobCostTrend/
+// getCashTrend, for the same reason: simple to reason about correct.
+export async function getLaborPercentTrend(months: number = 6): Promise<LaborPercentTrendPoint[]> {
+  const today = new Date();
+  const cumulative: { month: string; labor: Decimal; revenue: Decimal }[] = [];
+
+  for (let i = months; i >= 0; i--) {
+    const boundary = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
+    const dateArg = boundary.toISOString().slice(0, 10).replace(/-/g, "");
+    const [labor, income] = await Promise.all([
+      balance(["tag:costtype=labor", "type:x", `date:-${dateArg}`]),
+      balance(["type:R", `date:-${dateArg}`]),
+    ]);
+    const monthLabel = new Date(today.getFullYear(), today.getMonth() - i, 1)
+      .toISOString()
+      .slice(0, 7);
+    cumulative.push({ month: monthLabel, labor: labor.total, revenue: income.total.abs() });
+  }
+
+  return cumulative.map((point, i) => {
+    const prior = i === 0 ? { labor: new Decimal(0), revenue: new Decimal(0) } : cumulative[i - 1];
+    const laborDelta = point.labor.minus(prior.labor);
+    const revenueDelta = point.revenue.minus(prior.revenue);
+    const laborPct = revenueDelta.isZero() ? new Decimal(0) : laborDelta.dividedBy(revenueDelta).times(100);
+    return { month: point.month, laborPct: laborPct.toNumber() };
+  });
 }

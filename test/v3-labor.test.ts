@@ -236,3 +236,148 @@ describe("v3: cost type tag + burdened labor (spec §F17/§F18/§F19)", () => {
     expect(after!.burdenedAmount.toFixed(2)).toBe("100.00"); // unchanged despite rate bump
   });
 });
+
+describe("v3: cost type pivot reports + labor % of revenue (spec §F19, build instructions Phase 3)", () => {
+  let journalDir: string;
+  const cleanupJobIds: number[] = [];
+  const cleanupCostCodeIds: number[] = [];
+  const cleanupVendorIds: number[] = [];
+  const cleanupEmployeeIds: number[] = [];
+  const cleanupTxnids: string[] = [];
+  const cleanupBillingIds: number[] = [];
+
+  beforeAll(async () => {
+    journalDir = await mkdtemp(path.join(tmpdir(), "v3-pivot-test-"));
+    process.env.JOURNAL_DIR = journalDir;
+    await promisify(execFile)("git", ["init"], { cwd: journalDir });
+  });
+
+  afterAll(async () => {
+    await prisma.paymentApplication.deleteMany({ where: { billingId: { in: cleanupBillingIds } } });
+    await prisma.progressBilling.deleteMany({ where: { id: { in: cleanupBillingIds } } });
+    await prisma.laborEntry.deleteMany({ where: { txnid: { in: cleanupTxnids } } });
+    await prisma.bill.deleteMany({ where: { txnid: { in: cleanupTxnids } } });
+    await prisma.journalTxn.deleteMany({ where: { txnid: { in: cleanupTxnids } } });
+    for (const jobId of cleanupJobIds) {
+      await prisma.jobBudget.deleteMany({ where: { jobId } });
+      await prisma.job.delete({ where: { id: jobId } }).catch(() => {});
+    }
+    for (const id of cleanupCostCodeIds) {
+      await prisma.costCode.delete({ where: { id } }).catch(() => {});
+    }
+    for (const id of cleanupVendorIds) {
+      await prisma.vendor.delete({ where: { id } }).catch(() => {});
+    }
+    for (const id of cleanupEmployeeIds) {
+      await prisma.employee.delete({ where: { id } }).catch(() => {});
+    }
+    await rm(journalDir, { recursive: true, force: true });
+  });
+
+  it("pivot reports and labor-%-of-revenue reconcile against real hledger balances", async () => {
+    const { setBudget } = await import("@/app/actions/jobs");
+    const { createProgressBilling } = await import("@/app/actions/billings");
+    const {
+      getCostTypePivotForJob,
+      getCostTypePivotByJob,
+      getLaborPercentOfRevenue,
+    } = await import("@/lib/reports");
+
+    const jobCode = `V3PIVOT-${Date.now()}`;
+    const job = await createJob({ code: jobCode, name: "Pivot Job", retainagePct: "0" });
+    expect(job.ok).toBe(true);
+    if (!job.ok) return;
+    cleanupJobIds.push(job.data.id);
+
+    const laborCostCode = await createCostCode({ code: `V3PIVOT-LAB-${Date.now()}`, name: "Labor Code" });
+    if (!laborCostCode.ok) return;
+    cleanupCostCodeIds.push(laborCostCode.data.id);
+    const materialCostCode = await createCostCode({ code: `V3PIVOT-MAT-${Date.now()}`, name: "Material Code" });
+    if (!materialCostCode.ok) return;
+    cleanupCostCodeIds.push(materialCostCode.data.id);
+
+    await setBudget({ jobId: job.data.id, costCodeId: laborCostCode.data.id, budgetedAmount: "1000" });
+    await setBudget({ jobId: job.data.id, costCodeId: materialCostCode.data.id, budgetedAmount: "1000" });
+
+    const vendor = await createVendor({ name: `V3 Pivot Vendor ${Date.now()}` });
+    if (!vendor.ok) return;
+    cleanupVendorIds.push(vendor.data.id);
+
+    const employee = await createEmployee({
+      name: `V3 Pivot Employee ${Date.now()}`,
+      baseRate: "20.00",
+      payrollTaxPct: "0",
+      workersCompPct: "0",
+      benefitsPct: "0",
+    });
+    if (!employee.ok) return;
+    cleanupEmployeeIds.push(employee.data.id);
+
+    // Labor: 10h @ 20/hr, zero burden -> 200.00 posted.
+    const labor = await recordLaborCost({
+      jobId: job.data.id,
+      costCodeId: laborCostCode.data.id,
+      employeeId: employee.data.id,
+      hours: "10",
+      date: "2026-07-25",
+    });
+    expect(labor.ok).toBe(true);
+    if (labor.ok) cleanupTxnids.push(labor.data.txnid);
+
+    // Material expense: 300.00.
+    const material = await recordExpense({
+      jobId: job.data.id,
+      costCodeId: materialCostCode.data.id,
+      vendorId: vendor.data.id,
+      costType: "material",
+      amount: "300.00",
+      date: "2026-07-25",
+    });
+    expect(material.ok).toBe(true);
+    if (material.ok) cleanupTxnids.push(material.data.txnid);
+
+    // Progress billing: 2000.00 recognized in full as income (v2 spec §F1 —
+    // income is recognized on the full billed amount regardless of retainage).
+    const billing = await createProgressBilling({
+      jobId: job.data.id,
+      billingDate: "2026-07-25",
+      amountBilled: "2000.00",
+      retainageWithheld: "0",
+    });
+    expect(billing.ok).toBe(true);
+    if (billing.ok) cleanupBillingIds.push(billing.data.id);
+
+    expect(await check()).toBeNull();
+
+    // Per-job pivot: one row per budgeted cost code, bucketed by cost type.
+    const jobPivot = await getCostTypePivotForJob(job.data.id);
+    const laborRow = jobPivot.find((r) => r.costCodeId === laborCostCode.data.id);
+    const materialRow = jobPivot.find((r) => r.costCodeId === materialCostCode.data.id);
+    expect(laborRow!.labor.toFixed(2)).toBe("200.00");
+    expect(laborRow!.total.toFixed(2)).toBe("200.00");
+    expect(materialRow!.material.toFixed(2)).toBe("300.00");
+    expect(materialRow!.total.toFixed(2)).toBe("300.00");
+
+    // Cross-check against real hledger balance output directly.
+    const laborBalance = await balance([`tag:job=${jobCode}`, "tag:costtype=labor", "type:x"]);
+    expect(laborBalance.total.toFixed(2)).toBe("200.00");
+    const materialBalance = await balance([`tag:job=${jobCode}`, "tag:costtype=material", "type:x"]);
+    expect(materialBalance.total.toFixed(2)).toBe("300.00");
+
+    // Company-wide by-job pivot: this job's row should match the per-job pivot.
+    const byJobPivot = await getCostTypePivotByJob(["active"]);
+    const jobRow = byJobPivot.find((r) => r.jobId === job.data.id);
+    expect(jobRow!.labor.toFixed(2)).toBe("200.00");
+    expect(jobRow!.material.toFixed(2)).toBe("300.00");
+    expect(jobRow!.total.toFixed(2)).toBe("500.00");
+
+    // Labor % of revenue: 200.00 labor / 2000.00 revenue = 10%. This journal
+    // is isolated to this describe block (its own mkdtemp), so the ratio is
+    // exact, not diluted by other tests' entries.
+    const laborPct = await getLaborPercentOfRevenue();
+    expect(laborPct.toFixed(2)).toBe("10.00");
+
+    const incomeBalance = await balance(["type:R"]);
+    expect(incomeBalance.total.abs().toFixed(2)).toBe("2000.00");
+  });
+});

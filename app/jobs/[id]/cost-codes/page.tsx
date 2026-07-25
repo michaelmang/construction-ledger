@@ -1,6 +1,7 @@
-import { getCostCodeBreakdown } from "@/lib/reports";
+import { getCostCodeBreakdown, getCostTypePivotForJob } from "@/lib/reports";
 import { listCostCodes } from "@/lib/queries";
 import { CostCodeGrid } from "./CostCodeGrid";
+import { CostTypePivotTable } from "./CostTypePivotTable";
 
 export default async function JobCostCodesPage({
   params,
@@ -9,9 +10,10 @@ export default async function JobCostCodesPage({
 }) {
   const { id } = await params;
   const jobId = Number(id);
-  const [rows, allCostCodes] = await Promise.all([
+  const [rows, allCostCodes, pivotRows] = await Promise.all([
     getCostCodeBreakdown(jobId),
     listCostCodes(),
+    getCostTypePivotForJob(jobId),
   ]);
 
   const budgetedIds = new Set(rows.map((r) => r.costCodeId));
@@ -28,16 +30,20 @@ export default async function JobCostCodesPage({
   }));
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-text-2">
-        Edit the revised estimate as costs firm up — the WIP schedule recomputes from
-        whatever you save here.
-      </p>
-      {rows.length === 0 && available.length === 0 ? (
-        <p className="text-text-3">No cost codes exist yet.</p>
-      ) : (
-        <CostCodeGrid jobId={jobId} rows={gridRows} available={available} />
-      )}
+    <div className="space-y-8">
+      <div className="space-y-4">
+        <p className="text-sm text-text-2">
+          Edit the revised estimate as costs firm up — the WIP schedule recomputes from
+          whatever you save here.
+        </p>
+        {rows.length === 0 && available.length === 0 ? (
+          <p className="text-text-3">No cost codes exist yet.</p>
+        ) : (
+          <CostCodeGrid jobId={jobId} rows={gridRows} available={available} />
+        )}
+      </div>
+
+      {pivotRows.length > 0 && <CostTypePivotTable rows={pivotRows} />}
     </div>
   );
 }

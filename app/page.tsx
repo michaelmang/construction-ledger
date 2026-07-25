@@ -7,6 +7,7 @@ import {
   getArAgingForActiveJobs,
   getOverBudgetAlerts,
   getDashboardSummary,
+  getLaborPercentTrend,
 } from "@/lib/reports";
 import { Money } from "@/components/Money";
 import { formatUSD } from "@/lib/money";
@@ -21,15 +22,17 @@ const RETAINAGE_OVERDUE_DAYS = 60;
 const AR_OVERDUE_DAYS = 30;
 
 export default async function DashboardPage() {
-  const [cash, trend, wipReports, retainageReports, arReports, overBudget, summary] = await Promise.all([
-    getCashPositionSummary(),
-    getCashTrend(),
-    getWipScheduleForActiveJobs(),
-    getRetainageAgingForActiveJobs(),
-    getArAgingForActiveJobs(),
-    getOverBudgetAlerts(),
-    getDashboardSummary(),
-  ]);
+  const [cash, trend, wipReports, retainageReports, arReports, overBudget, summary, laborTrend] =
+    await Promise.all([
+      getCashPositionSummary(),
+      getCashTrend(),
+      getWipScheduleForActiveJobs(),
+      getRetainageAgingForActiveJobs(),
+      getArAgingForActiveJobs(),
+      getOverBudgetAlerts(),
+      getDashboardSummary(),
+      getLaborPercentTrend(),
+    ]);
 
   const overdueRetainage = retainageReports.flatMap((r) =>
     r.billings
@@ -65,6 +68,23 @@ export default async function DashboardPage() {
         </div>
         <div className="mt-4">
           <AreaChart points={trend.map((p) => ({ label: p.date, value: p.netCash }))} format="usd" />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-surface p-5">
+        <div className="flex items-baseline justify-between">
+          <div className="text-[11px] font-medium uppercase tracking-widest text-text-3">
+            Labor as % of Revenue (6 Months)
+          </div>
+          <div className="font-mono text-sm tabular-nums text-text-2">
+            {summary.laborPercentOfRevenue.toFixed(1)}% overall
+          </div>
+        </div>
+        <div className="mt-4">
+          <AreaChart
+            points={laborTrend.map((p) => ({ label: p.month, value: p.laborPct }))}
+            format="percent"
+          />
         </div>
       </section>
 

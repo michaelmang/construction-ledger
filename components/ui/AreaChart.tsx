@@ -7,10 +7,10 @@ export interface AreaChartPoint {
   value: number;
 }
 
-function formatValue(value: number, format: "usd" | "number"): string {
-  return format === "usd"
-    ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-    : value.toFixed(0);
+function formatValue(value: number, format: "usd" | "number" | "percent"): string {
+  if (format === "usd") return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (format === "percent") return `${value.toFixed(1)}%`;
+  return value.toFixed(0);
 }
 
 // Hand-rolled SVG area chart (v2 spec §4.3): accent line + gradient fill,
@@ -27,7 +27,7 @@ export function AreaChart({
 }: {
   points: AreaChartPoint[];
   height?: number;
-  format?: "usd" | "number";
+  format?: "usd" | "number" | "percent";
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const width = 600;

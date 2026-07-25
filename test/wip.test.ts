@@ -8,6 +8,8 @@ import {
   computeRetainageAging,
   computeArAging,
   computeApAging,
+  computeCostTypePivot,
+  computeCostTypePivotByJob,
 } from "@/lib/wip";
 
 const d = (v: string) => new Decimal(v);
@@ -212,5 +214,72 @@ describe("computeApAging", () => {
       asOf,
     );
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("computeCostTypePivot", () => {
+  it("buckets amounts by cost code x cost type and totals correctly", () => {
+    // Concrete: 4200 material + 331 labor. Carpentry: 8000 subcontract, no labor/material.
+    // A stray 500 with no costtype tag lands in "untyped", not silently dropped.
+    const rows = computeCostTypePivot(
+      [
+        { costCodeId: 1, costCode: "03-CONCRETE", costCodeName: "Concrete" },
+        { costCodeId: 2, costCode: "06-CARPENTRY", costCodeName: "Carpentry" },
+      ],
+      [
+        { key: 1, costType: "material", amount: d("4200") },
+        { key: 1, costType: "labor", amount: d("331") },
+        { key: 1, costType: "untyped", amount: d("500") },
+        { key: 2, costType: "subcontract", amount: d("8000") },
+      ],
+    );
+
+    expect(rows).toHaveLength(2);
+    const concrete = rows[0];
+    expect(concrete.material.toFixed(2)).toBe("4200.00");
+    expect(concrete.labor.toFixed(2)).toBe("331.00");
+    expect(concrete.untyped.toFixed(2)).toBe("500.00");
+    expect(concrete.subcontract.toFixed(2)).toBe("0.00");
+    expect(concrete.equipment.toFixed(2)).toBe("0.00");
+    expect(concrete.other.toFixed(2)).toBe("0.00");
+    expect(concrete.total.toFixed(2)).toBe("5031.00"); // 4200 + 331 + 500
+
+    const carpentry = rows[1];
+    expect(carpentry.subcontract.toFixed(2)).toBe("8000.00");
+    expect(carpentry.total.toFixed(2)).toBe("8000.00");
+  });
+
+  it("a cost code with no matching amounts has all-zero buckets, not a missing row", () => {
+    const rows = computeCostTypePivot(
+      [{ costCodeId: 9, costCode: "99-UNUSED", costCodeName: "Unused" }],
+      [],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].total.toFixed(2)).toBe("0.00");
+  });
+});
+
+describe("computeCostTypePivotByJob", () => {
+  it("buckets amounts by job x cost type across cost codes", () => {
+    // Job A: 4200 material (concrete) + 8000 subcontract (carpentry) = 12200 total.
+    // Job B: 331 labor only.
+    const rows = computeCostTypePivotByJob(
+      [
+        { jobId: 10, jobCode: "J-A", jobName: "Job A" },
+        { jobId: 11, jobCode: "J-B", jobName: "Job B" },
+      ],
+      [
+        { key: 10, costType: "material", amount: d("4200") },
+        { key: 10, costType: "subcontract", amount: d("8000") },
+        { key: 11, costType: "labor", amount: d("331") },
+      ],
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].total.toFixed(2)).toBe("12200.00");
+    expect(rows[0].material.toFixed(2)).toBe("4200.00");
+    expect(rows[0].subcontract.toFixed(2)).toBe("8000.00");
+    expect(rows[1].total.toFixed(2)).toBe("331.00");
+    expect(rows[1].labor.toFixed(2)).toBe("331.00");
   });
 });

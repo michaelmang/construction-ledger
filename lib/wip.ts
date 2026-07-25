@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { CostType } from "./cost-types";
 
 // All functions here are pure (inputs in, numbers out, no I/O) so the WIP
 // math is testable without hledger or Prisma. Server-side callers assemble
@@ -195,4 +196,88 @@ export function computeApAging(bills: ApAgingInput[], asOf: Date): ApAgingRow[] 
       daysOutstanding: daysOutstanding(b.billDate, asOf),
     }))
     .filter((r) => !r.amountDue.isZero());
+}
+
+// v3 spec §F17/§F19: cost code x cost type pivot. "untyped" is its own
+// bucket (not folded into "other") so a nonzero value is a visible signal
+// that entries predate the cost-type backfill migration — the UI only shows
+// that column when it's nonzero.
+export type CostTypeBucket = CostType | "untyped";
+
+export interface CostTypePivotAmount {
+  key: number; // costCodeId for the per-job pivot, jobId for the company-wide pivot
+  costType: CostTypeBucket;
+  amount: Decimal;
+}
+
+function sumByType(amounts: CostTypePivotAmount[], key: number): Record<CostTypeBucket, Decimal> {
+  const zero = new Decimal(0);
+  const result: Record<CostTypeBucket, Decimal> = {
+    labor: zero,
+    material: zero,
+    subcontract: zero,
+    equipment: zero,
+    other: zero,
+    untyped: zero,
+  };
+  for (const a of amounts) {
+    if (a.key !== key) continue;
+    result[a.costType] = result[a.costType].plus(a.amount);
+  }
+  return result;
+}
+
+function pivotTotal(byType: Record<CostTypeBucket, Decimal>): Decimal {
+  return byType.labor
+    .plus(byType.material)
+    .plus(byType.subcontract)
+    .plus(byType.equipment)
+    .plus(byType.other)
+    .plus(byType.untyped);
+}
+
+export interface CostTypePivotCostCode {
+  costCodeId: number;
+  costCode: string;
+  costCodeName: string;
+}
+
+export interface CostTypePivotRow extends Record<CostTypeBucket, Decimal> {
+  costCodeId: number;
+  costCode: string;
+  costCodeName: string;
+  total: Decimal;
+}
+
+export function computeCostTypePivot(
+  costCodes: CostTypePivotCostCode[],
+  amounts: CostTypePivotAmount[],
+): CostTypePivotRow[] {
+  return costCodes.map((cc) => {
+    const byType = sumByType(amounts, cc.costCodeId);
+    return { costCodeId: cc.costCodeId, costCode: cc.costCode, costCodeName: cc.costCodeName, ...byType, total: pivotTotal(byType) };
+  });
+}
+
+export interface JobCostTypePivotJob {
+  jobId: number;
+  jobCode: string;
+  jobName: string;
+}
+
+export interface JobCostTypePivotRow extends Record<CostTypeBucket, Decimal> {
+  jobId: number;
+  jobCode: string;
+  jobName: string;
+  total: Decimal;
+}
+
+export function computeCostTypePivotByJob(
+  jobs: JobCostTypePivotJob[],
+  amounts: CostTypePivotAmount[],
+): JobCostTypePivotRow[] {
+  return jobs.map((j) => {
+    const byType = sumByType(amounts, j.jobId);
+    return { jobId: j.jobId, jobCode: j.jobCode, jobName: j.jobName, ...byType, total: pivotTotal(byType) };
+  });
 }

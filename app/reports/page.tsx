@@ -26,6 +26,11 @@ const reports = [
     title: "AP Aging",
     description: "What's still owed on every open vendor bill, across jobs and overhead.",
   },
+  {
+    href: "/reports/cost-types",
+    title: "Cost by Type",
+    description: "Labor, material, subcontract, and equipment cost across every job.",
+  },
 ];
 
 export default function ReportsPage() {
