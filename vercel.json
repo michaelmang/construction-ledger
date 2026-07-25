@@ -1,0 +1,3 @@
+{
+  "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then npx prisma migrate deploy; fi && npx prisma generate && npx tsx scripts/fetch-hledger.ts && npx next build"
+}

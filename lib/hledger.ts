@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { copyFile, chmod, access } from "node:fs/promises";
+import path from "node:path";
 import Decimal from "decimal.js";
 import { money } from "./money";
 
@@ -13,6 +15,35 @@ function journalDir(): string {
 
 function mainJournalPath(): string {
   return `${journalDir()}/main.journal`;
+}
+
+// On Vercel, scripts/fetch-hledger.ts vendors a static hledger binary into
+// bin/hledger/ at build time, and next.config.ts's outputFileTracingIncludes
+// ships it with the deployed function — but the deployed function's own
+// filesystem is read-only, and traced files are known to sometimes lose
+// their exec bit in transit. Copying to /tmp (writable) and chmod'ing there
+// once per container sidesteps both problems instead of hoping the bundled
+// copy is directly executable in place. Cached at module scope so this only
+// runs once per warm container, not once per request.
+let hledgerBinaryPathPromise: Promise<string> | null = null;
+
+async function hledgerBinaryPath(): Promise<string> {
+  if (!process.env.VERCEL) return "hledger"; // local dev — PATH lookup, Homebrew install
+
+  if (!hledgerBinaryPathPromise) {
+    hledgerBinaryPathPromise = (async () => {
+      const bundled = path.join(process.cwd(), "bin", "hledger", "hledger");
+      const runnable = path.join("/tmp", "hledger");
+      try {
+        await access(runnable);
+      } catch {
+        await copyFile(bundled, runnable);
+        await chmod(runnable, 0o755);
+      }
+      return runnable;
+    })();
+  }
+  return hledgerBinaryPathPromise;
 }
 
 export class HledgerError extends Error {
@@ -31,7 +62,7 @@ export class HledgerError extends Error {
 async function runHledgerJson(args: string[]): Promise<unknown> {
   try {
     const { stdout } = await execFileAsync(
-      "hledger",
+      await hledgerBinaryPath(),
       ["-f", mainJournalPath(), ...args, "--output-format=json"],
       { maxBuffer: 1024 * 1024 * 32 },
     );
@@ -165,7 +196,7 @@ export async function print(query: string[] = []): Promise<JournalTransaction[]>
 // Returns null when clean, or the error text when it is not.
 export async function check(): Promise<string | null> {
   try {
-    await execFileAsync("hledger", ["-f", mainJournalPath(), "check"]);
+    await execFileAsync(await hledgerBinaryPath(), ["-f", mainJournalPath(), "check"]);
     return null;
   } catch (err) {
     const e = err as { stderr?: string; message: string };

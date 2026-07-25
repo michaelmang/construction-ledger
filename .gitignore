@@ -42,7 +42,11 @@ next-env.d.ts
 
 /app/generated/prisma
 
-# sqlite
+# sqlite (legacy — no longer used, kept as a harmless guard)
 *.db
 *.db-journal
+
+# hledger binary fetched at Vercel build time (scripts/fetch-hledger.ts) —
+# a build artifact, never committed.
+/bin/hledger
 
