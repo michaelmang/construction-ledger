@@ -1,3 +1,9 @@
 {
-  "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then npx prisma migrate deploy; fi && npx prisma generate && npx tsx scripts/fetch-hledger.ts && npx next build"
+  "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then npx prisma migrate deploy; fi && npx prisma generate && npx tsx scripts/fetch-hledger.ts && npx next build",
+  "crons": [
+    {
+      "path": "/api/cron/snapshot-metadata",
+      "schedule": "0 9 * * *"
+    }
+  ]
 }

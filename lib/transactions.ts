@@ -3,6 +3,7 @@ import Decimal from "decimal.js";
 import { prisma } from "./db";
 import { writeEntry, replaceEntry, deleteEntry, Posting } from "./journal";
 import { commitJournalChanges, resyncJournalFromRemote, JournalPushRejectedError } from "./journal-git";
+import { assertWritesAllowed } from "./env-guard";
 
 export type TransactionKind =
   | "expense"
@@ -85,6 +86,7 @@ export async function recordTransaction(
   entry: TransactionEntry,
   commitMessage: string,
 ): Promise<{ txnid: string }> {
+  assertWritesAllowed();
   const txnid = entry.tags.txnid ?? randomUUID();
   const tags = { ...entry.tags, txnid };
 
@@ -128,6 +130,7 @@ export async function updateTransaction(
   entry: TransactionEntry,
   commitMessage: string,
 ): Promise<void> {
+  assertWritesAllowed();
   return serialized(() =>
     withPushRetry(async () => {
       await replaceEntry(txnid, {
@@ -156,6 +159,7 @@ export async function removeTransaction(
   txnid: string,
   commitMessage: string,
 ): Promise<void> {
+  assertWritesAllowed();
   return serialized(() =>
     withPushRetry(async () => {
       await deleteEntry(txnid);
