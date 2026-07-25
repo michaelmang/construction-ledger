@@ -200,3 +200,17 @@ export type RecordLaborInput = z.infer<typeof recordLaborSchema>;
 
 export const editLaborSchema = recordLaborSchema.extend({ txnid: txnidSchema });
 export type EditLaborInput = z.infer<typeof editLaborSchema>;
+
+// V4 spec Phase 1 — invite-only allowlist, admin-managed.
+export const userRoleSchema = z.enum(["admin", "bookkeeper", "viewer"]);
+
+export const inviteUserSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+  role: userRoleSchema,
+});
+export type InviteUserInput = z.infer<typeof inviteUserSchema>;
+
+export const revokeUserSchema = z.object({
+  email: z.string().email(),
+});
+export type RevokeUserInput = z.infer<typeof revokeUserSchema>;

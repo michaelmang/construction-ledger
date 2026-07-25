@@ -7,6 +7,12 @@ import path from "node:path";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+// See test/action-edge-cases.test.ts for why this is mocked (revalidatePath's
+// reasoning applies identically to auth()).
+vi.mock("@/auth", () => ({
+  auth: vi.fn(async () => ({ user: { id: "test-user", email: "test@example.com", role: "admin" } })),
+}));
+
 import { prisma } from "@/lib/db";
 import { createJob } from "@/app/actions/jobs";
 import { createCostCode } from "@/app/actions/jobs";

@@ -25,6 +25,13 @@ const SNAPSHOT_QUERIES: [string, () => Promise<unknown>][] = [
   ["billPayment", () => prisma.billPayment.findMany()],
   ["employee", () => prisma.employee.findMany()],
   ["laborEntry", () => prisma.laborEntry.findMany()],
+  // Deliberately no account/session/verificationToken here — those hold
+  // OAuth tokens and one-time sign-in secrets, which shouldn't be written
+  // into a git-committed file even in a private repo. Losing them just
+  // means everyone signs in again; losing `user`/`allowedUser` would mean
+  // nobody could sign in at all, so those two are worth backing up.
+  ["user", () => prisma.user.findMany()],
+  ["allowedUser", () => prisma.allowedUser.findMany()],
 ];
 
 function journalDir(): string {

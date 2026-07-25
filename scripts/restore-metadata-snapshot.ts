@@ -21,6 +21,8 @@ import { prisma } from "../lib/db";
 // rows have a foreign key into has already been restored. Independent
 // tables (first group) can go in any order relative to each other.
 const RESTORE_ORDER: [string, (rows: unknown[]) => Promise<unknown>][] = [
+  ["user", (rows) => prisma.user.createMany({ data: rows as never[] })],
+  ["allowedUser", (rows) => prisma.allowedUser.createMany({ data: rows as never[] })],
   ["costCode", (rows) => prisma.costCode.createMany({ data: rows as never[] })],
   ["vendor", (rows) => prisma.vendor.createMany({ data: rows as never[] })],
   ["overheadCategory", (rows) => prisma.overheadCategory.createMany({ data: rows as never[] })],

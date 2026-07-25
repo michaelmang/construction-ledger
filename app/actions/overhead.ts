@@ -13,12 +13,16 @@ import {
 import { accountsPayable, expenseOverhead, vendorAccountSlug } from "@/lib/accounts";
 import { recordTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
+import { requireWriteRole } from "@/lib/authz";
 
 class ActionError extends Error {}
 
 export async function createOverheadCategory(
   input: CreateOverheadCategoryInput,
 ): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = createOverheadCategorySchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -37,6 +41,9 @@ export async function createOverheadCategory(
 export async function recordOverheadExpense(
   input: RecordOverheadExpenseInput,
 ): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = recordOverheadExpenseSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;

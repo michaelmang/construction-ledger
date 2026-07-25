@@ -8,10 +8,14 @@ import { createCashAccountSchema, CreateCashAccountInput } from "@/lib/validatio
 import { cash, equityOpeningBalances } from "@/lib/accounts";
 import { recordTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
+import { requireWriteRole } from "@/lib/authz";
 
 export async function createCashAccount(
   input: CreateCashAccountInput,
 ): Promise<ActionResult<{ id: number; openingBalanceTxnid?: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = createCashAccountSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { ActionResult, ok, fail } from "@/lib/action-result";
+import { requireAdminRole } from "@/lib/authz";
 import {
   createEmployeeSchema,
   updateEmployeeSchema,
@@ -12,9 +13,16 @@ import {
   SetEmployeeActiveInput,
 } from "@/lib/validation";
 
+// Employee pay-rate data is admin-only (V4-AUDIT-AND-SPEC.md Phase 1) —
+// bookkeepers can record labor hours against existing employees, but
+// creating/editing/deactivating the underlying rate records is reserved
+// for admins.
 export async function createEmployee(
   input: CreateEmployeeInput,
 ): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireAdminRole();
+  if (denied) return denied;
+
   const parsed = createEmployeeSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -43,6 +51,9 @@ export async function createEmployee(
 export async function updateEmployee(
   input: UpdateEmployeeInput,
 ): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireAdminRole();
+  if (denied) return denied;
+
   const parsed = updateEmployeeSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -71,6 +82,9 @@ export async function updateEmployee(
 export async function setEmployeeActive(
   input: SetEmployeeActiveInput,
 ): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireAdminRole();
+  if (denied) return denied;
+
   const parsed = setEmployeeActiveSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;

@@ -8,6 +8,7 @@ import { payBillSchema, PayBillInput } from "@/lib/validation";
 import { accountsPayable, cash, vendorAccountSlug } from "@/lib/accounts";
 import { recordTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
+import { requireWriteRole } from "@/lib/authz";
 
 class ActionError extends Error {}
 
@@ -22,6 +23,9 @@ async function resolveCashAccount(explicit: string | undefined): Promise<string>
 // out"). Retainage withheld on the bill is excluded from what's payable here;
 // releasing it is a separate flow, not yet built.
 export async function payBill(input: PayBillInput): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = payBillSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;

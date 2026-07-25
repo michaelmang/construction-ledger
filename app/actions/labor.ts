@@ -16,6 +16,7 @@ import { laborAmounts } from "@/lib/labor";
 import { JournalValidationError } from "@/lib/journal";
 import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
+import { requireWriteRole } from "@/lib/authz";
 
 class ActionError extends Error {}
 
@@ -81,6 +82,9 @@ async function buildLaborEntry(
 export async function recordLaborCost(
   input: RecordLaborInput,
 ): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = recordLaborSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -120,6 +124,9 @@ export async function recordLaborCost(
 export async function editLaborCost(
   input: EditLaborInput,
 ): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = editLaborSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -158,6 +165,9 @@ export async function editLaborCost(
 }
 
 export async function deleteLaborCost(txnid: string): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = txnidSchema.safeParse(txnid);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
 

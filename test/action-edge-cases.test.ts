@@ -10,6 +10,17 @@ import path from "node:path";
 // these actions can run directly in a test process.
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+// Same reasoning as next/cache above: auth() reads cookies() under the hood,
+// which throws outside a request scope, and next-auth's own module graph
+// doesn't resolve cleanly under Vite/vitest at all (a next/server subpath
+// export mismatch) regardless of whether auth() is even called. Mocking
+// @/auth replaces the whole module before that import is ever evaluated.
+// "admin" satisfies every requireWriteRole/requireAdminRole check these
+// actions use — these tests are about business logic, not authorization.
+vi.mock("@/auth", () => ({
+  auth: vi.fn(async () => ({ user: { id: "test-user", email: "test@example.com", role: "admin" } })),
+}));
+
 import { prisma } from "@/lib/db";
 import { createJob } from "@/app/actions/jobs";
 import { recordExpense } from "@/app/actions/expenses";

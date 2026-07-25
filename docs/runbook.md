@@ -99,3 +99,42 @@ unaffected by any of this — it's already durable in its own right.
 week goes by with no new `snapshots/YYYY-MM-DD.json` commits in the
 journal repo, check the Vercel project's Cron Jobs tab for recent
 invocation failures.
+
+## Auth (V4 spec Phase 1): setup and the first admin
+
+**Required env vars in Vercel (Production)**:
+
+- `AUTH_SECRET` — generate with `openssl rand -base64 32`. Never reuse the
+  value from local `.env`; generate a separate one for production.
+- `AUTH_RESEND_KEY` — a [Resend](https://resend.com) API key. Magic-link
+  emails go out through Resend's API, not SMTP.
+- `AUTH_EMAIL_FROM` — the sender address, e.g. `login@yourdomain.com`.
+  Must be on a domain verified with Resend (or use Resend's shared
+  `onboarding@resend.dev` for early testing — rate-limited, not for real
+  use).
+
+Without `AUTH_RESEND_KEY`/`AUTH_EMAIL_FROM` set correctly, sign-in for an
+already-allowlisted email fails with `?error=Configuration` on `/sign-in`
+— the allowlist check itself still runs first and correctly rejects
+non-invited emails either way, since that check happens before Resend is
+ever called (see `auth.ts`).
+
+**Bootstrapping the first admin** (chicken-and-egg: the `/users` page that
+invites people requires being signed in as an admin, and on a fresh
+deploy nobody is one yet):
+
+```
+npx tsx scripts/bootstrap-admin.ts you@company.com
+```
+
+Run this once, locally, with `DATABASE_URL` pointed at the target
+database (production: `vercel env pull` a temp env file first, same
+pattern as any other prod-database script in this project). After that,
+sign in as that email and invite everyone else from `/users`.
+
+**Revoking access**: the `/users` page's "Revoke" removes the person from
+the allowlist *and* immediately invalidates any session they currently
+have (deleting their `User` row cascades to `Account`/`Session`) — not
+just blocking their next sign-in attempt. Can't be used on your own
+account or the last remaining admin (both are blocked in
+`app/actions/users.ts` on purpose).
