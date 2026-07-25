@@ -6,6 +6,7 @@ import { editLaborCost } from "@/app/actions/labor";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 import { laborAmounts, burdenDeltaPct } from "@/lib/labor";
 import { formatUSD } from "@/lib/money";
+import { hapticSuccess, hapticError } from "@/lib/haptics";
 import { EmployeeOption } from "../../../expenses/new/ExpenseForm";
 
 interface CostCodeOption {
@@ -78,10 +79,12 @@ export function LaborForm({
       memo: memo || undefined,
     });
     if (!result.ok) {
+      hapticError();
       setError(result.error);
       setSubmitting(false);
       return;
     }
+    hapticSuccess();
     router.push(`/jobs/${jobId}/transactions`);
     router.refresh();
   }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { setJobStatus } from "@/app/actions/jobs";
+import { hapticSuccess, hapticError } from "@/lib/haptics";
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
@@ -27,10 +28,12 @@ export function JobStatusMenu({ jobId, status }: { jobId: number; status: string
     setError(null);
     const result = await setJobStatus({ jobId, status: newStatus as "active" | "complete" | "archived" });
     if (!result.ok) {
+      hapticError();
       setError(result.error);
       setSaving(false);
       return;
     }
+    hapticSuccess();
     router.refresh();
   }
 
@@ -40,7 +43,7 @@ export function JobStatusMenu({ jobId, status }: { jobId: number; status: string
         value={status}
         onChange={(e) => handleChange(e.target.value)}
         disabled={saving}
-        className={`rounded-full border-0 px-2 py-0.5 text-xs font-medium capitalize ${STATUS_CLASSES[status] ?? "bg-surface-2 text-text-2"}`}
+        className={`rounded-full border-0 py-0.5 pl-3 pr-6 text-xs font-medium capitalize ${STATUS_CLASSES[status] ?? "bg-surface-2 text-text-2"}`}
       >
         {Object.entries(STATUS_LABELS).map(([value, label]) => (
           <option key={value} value={value}>

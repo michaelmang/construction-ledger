@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { recordPayment, editPayment } from "@/app/actions/payments";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { hapticSuccess, hapticError } from "@/lib/haptics";
 
 interface CashAccountOption {
   name: string;
@@ -72,10 +73,12 @@ export function PaymentForm({
           billingId: billingId || undefined,
         });
     if (!result.ok) {
+      hapticError();
       setError(result.error);
       setSubmitting(false);
       return;
     }
+    hapticSuccess();
     router.push(`/jobs/${jobId}/transactions`);
     router.refresh();
   }

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { deleteExpense } from "@/app/actions/expenses";
 import { deletePayment } from "@/app/actions/payments";
 import { deleteLaborCost } from "@/app/actions/labor";
+import { hapticTap, hapticSuccess, hapticError } from "@/lib/haptics";
 
 export function TransactionActions({
   jobId,
@@ -38,10 +39,12 @@ export function TransactionActions({
     const result =
       kind === "expense" ? await deleteExpense(txnid) : kind === "labor" ? await deleteLaborCost(txnid) : await deletePayment(txnid);
     if (!result.ok) {
+      hapticError();
       setError(result.error);
       setDeleting(false);
       return;
     }
+    hapticSuccess();
     router.refresh();
   }
 
@@ -70,7 +73,14 @@ export function TransactionActions({
       <Link href={editHref} className="text-text-2 hover:underline">
         Edit
       </Link>
-      <button type="button" onClick={() => setConfirming(true)} className="text-text-2 hover:underline">
+      <button
+        type="button"
+        onClick={() => {
+          hapticTap();
+          setConfirming(true);
+        }}
+        className="text-text-2 hover:underline"
+      >
         Delete
       </button>
     </div>

@@ -10,6 +10,7 @@ import { VendorPicker, VendorOption } from "@/components/VendorPicker";
 import { COST_TYPES, COST_TYPE_LABEL, CostType } from "@/lib/cost-types";
 import { laborAmounts, burdenDeltaPct } from "@/lib/labor";
 import { formatUSD } from "@/lib/money";
+import { hapticSuccess, hapticError } from "@/lib/haptics";
 
 interface CostCodeOption {
   id: number;
@@ -119,10 +120,12 @@ export function ExpenseForm({
         memo: description || undefined,
       });
       if (!result.ok) {
+        hapticError();
         setError(result.error);
         setSubmitting(false);
         return;
       }
+      hapticSuccess();
       router.push(`/jobs/${jobId}/transactions`);
       router.refresh();
       return;
@@ -144,6 +147,7 @@ export function ExpenseForm({
       }
       const vendorResult = await createVendor({ name: newVendorName.trim() });
       if (!vendorResult.ok) {
+        hapticError();
         setError(vendorResult.error);
         setSubmitting(false);
         return;
@@ -168,10 +172,12 @@ export function ExpenseForm({
       ? await editExpense({ ...payload, txnid: initial.txnid })
       : await recordExpense(payload);
     if (!result.ok) {
+      hapticError();
       setError(result.error);
       setSubmitting(false);
       return;
     }
+    hapticSuccess();
     router.push(`/jobs/${jobId}/transactions`);
     router.refresh();
   }

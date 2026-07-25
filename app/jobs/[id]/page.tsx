@@ -1,12 +1,17 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { getJobProfitability, getJobCostTrend } from "@/lib/reports";
-import { resolveDateRangeParams } from "@/lib/date-range";
+import { resolveDateRangeParams, ResolvedDateRange } from "@/lib/date-range";
 import { formatUSD } from "@/lib/money";
 import { StatCard } from "@/components/ui/StatCard";
 import { AreaChart } from "@/components/ui/AreaChart";
 import { DateRangeControl } from "@/components/ui/DateRangeControl";
+import { StatCardSkeleton, ChartSkeleton } from "@/components/ui/Skeleton";
 import { primaryButtonClass, secondaryButtonClass } from "@/components/form";
 
+// Stat cards and the cost trend chart are independent hledger-backed
+// queries — each streams in via its own Suspense boundary rather than
+// blocking the whole page on both.
 export default async function JobOverviewPage({
   params,
   searchParams,
@@ -17,10 +22,6 @@ export default async function JobOverviewPage({
   const { id } = await params;
   const jobId = Number(id);
   const range = resolveDateRangeParams(await searchParams);
-  const [{ wip, profitability, cfoPctCompleteEstimate }, costTrend] = await Promise.all([
-    getJobProfitability(jobId),
-    getJobCostTrend(jobId, range),
-  ]);
 
   return (
     <div className="space-y-8">
@@ -36,28 +37,9 @@ export default async function JobOverviewPage({
         </Link>
       </div>
 
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatCard label="Revised Contract Value" value={formatUSD(wip.revisedContractValue)} />
-        <StatCard label="% Complete" value={`${wip.pctComplete.times(100).toFixed(1)}%`} />
-        <StatCard
-          label="CFO % Est."
-          value={cfoPctCompleteEstimate ? `${cfoPctCompleteEstimate.toFixed(1)}%` : "—"}
-        />
-        <StatCard label="Costs to Date" value={formatUSD(wip.costsToDate)} />
-        <StatCard label="Estimated Total Cost" value={formatUSD(wip.estimatedTotalCost)} />
-        <StatCard label="Earned Revenue" value={formatUSD(wip.earnedRevenue)} />
-        <StatCard label="Billed to Date" value={formatUSD(wip.billedToDate)} />
-        <StatCard
-          label="Over / Under Billed"
-          value={formatUSD(wip.overUnderBilling)}
-          tone={wip.overUnderBilling.isNegative() ? "negative" : "positive"}
-        />
-        <StatCard
-          label="Actual Margin to Date"
-          value={formatUSD(profitability.actualMarginToDate)}
-          tone={profitability.actualMarginToDate.isNegative() ? "negative" : "positive"}
-        />
-      </section>
+      <Suspense fallback={<StatCardsSkeleton />}>
+        <StatCards jobId={jobId} />
+      </Suspense>
 
       <DateRangeControl basePath={`/jobs/${jobId}`} resolved={range} />
 
@@ -66,9 +48,54 @@ export default async function JobOverviewPage({
           Costs by Month
         </div>
         <div className="mt-4">
-          <AreaChart points={costTrend.map((p) => ({ label: p.month, value: p.costs }))} format="usd" />
+          <Suspense fallback={<ChartSkeleton />}>
+            <CostTrendChart jobId={jobId} range={range} />
+          </Suspense>
         </div>
       </section>
     </div>
   );
+}
+
+function StatCardsSkeleton() {
+  return (
+    <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      {Array.from({ length: 9 }, (_, i) => (
+        <StatCardSkeleton key={i} />
+      ))}
+    </section>
+  );
+}
+
+async function StatCards({ jobId }: { jobId: number }) {
+  const { wip, profitability, cfoPctCompleteEstimate } = await getJobProfitability(jobId);
+  return (
+    <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <StatCard label="Revised Contract Value" value={formatUSD(wip.revisedContractValue)} />
+      <StatCard label="% Complete" value={`${wip.pctComplete.times(100).toFixed(1)}%`} />
+      <StatCard
+        label="CFO % Est."
+        value={cfoPctCompleteEstimate ? `${cfoPctCompleteEstimate.toFixed(1)}%` : "—"}
+      />
+      <StatCard label="Costs to Date" value={formatUSD(wip.costsToDate)} />
+      <StatCard label="Estimated Total Cost" value={formatUSD(wip.estimatedTotalCost)} />
+      <StatCard label="Earned Revenue" value={formatUSD(wip.earnedRevenue)} />
+      <StatCard label="Billed to Date" value={formatUSD(wip.billedToDate)} />
+      <StatCard
+        label="Over / Under Billed"
+        value={formatUSD(wip.overUnderBilling)}
+        tone={wip.overUnderBilling.isNegative() ? "negative" : "positive"}
+      />
+      <StatCard
+        label="Actual Margin to Date"
+        value={formatUSD(profitability.actualMarginToDate)}
+        tone={profitability.actualMarginToDate.isNegative() ? "negative" : "positive"}
+      />
+    </section>
+  );
+}
+
+async function CostTrendChart({ jobId, range }: { jobId: number; range: ResolvedDateRange }) {
+  const costTrend = await getJobCostTrend(jobId, range);
+  return <AreaChart points={costTrend.map((p) => ({ label: p.month, value: p.costs }))} format="usd" />;
 }

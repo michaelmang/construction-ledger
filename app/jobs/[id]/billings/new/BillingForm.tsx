@@ -7,6 +7,7 @@ import Decimal from "decimal.js";
 import { createProgressBilling, editProgressBilling } from "@/app/actions/billings";
 import { formatUSD } from "@/lib/money";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { hapticSuccess, hapticError } from "@/lib/haptics";
 
 export interface BillingInitial {
   id: number;
@@ -71,17 +72,21 @@ export function BillingForm({
       ? await editProgressBilling({ ...payload, id: initial.id, txnid: initial.txnid })
       : await createProgressBilling(payload);
     if (!result.ok) {
+      hapticError();
       setError(result.error);
       setSubmitting(false);
       return;
     }
     if (result.warning) {
       // Over-billing is allowed but the CFO needs to actually see this, so
-      // don't auto-navigate away from it.
+      // don't auto-navigate away from it — the error pattern is reused here
+      // to draw attention, distinct from the plain success below.
+      hapticError();
       setWarning(result.warning);
       setSubmitting(false);
       return;
     }
+    hapticSuccess();
     router.push(`/jobs/${jobId}/billings`);
     router.refresh();
   }
