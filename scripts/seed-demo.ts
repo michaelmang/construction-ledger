@@ -12,12 +12,13 @@
 // Usage: npm run seed:demo
 
 import "dotenv/config";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { mkdir, rm } from "node:fs/promises";
+import fs from "node:fs";
+import { rm } from "node:fs/promises";
+import * as git from "isomorphic-git";
 import Decimal from "decimal.js";
 import { prisma } from "../lib/db";
 import { recordTransaction } from "../lib/transactions";
+import { forcePushSeededJournal } from "../lib/journal-git";
 import {
   accountsPayable,
   accountsReceivable,
@@ -36,21 +37,27 @@ import { formatUSD } from "../lib/money";
 import { laborAmounts } from "../lib/labor";
 import { CostType } from "../lib/cost-types";
 
-const execFileAsync = promisify(execFile);
-
 function journalDir(): string {
   const dir = process.env.JOURNAL_DIR;
   if (!dir) throw new Error("JOURNAL_DIR environment variable is not set");
   return dir;
 }
 
+// If seeding against production (JOURNAL_GIT_REMOTE set), the domain-write
+// loop below still runs as pure local commits — pushing on every one of the
+// ~30 seed transactions individually would be slow and pointless. The whole
+// point of a reset is one clean history pushed once at the end (see
+// forcePushSeededJournal, called from main()); temporarily unsetting the
+// remote here is what makes lib/journal-git.ts's commitJournalChanges treat
+// every seed write as local-only, exactly like local dev.
+const journalRemote = process.env.JOURNAL_GIT_REMOTE;
+
 async function resetJournalRepo(): Promise<void> {
   const dir = journalDir();
   await rm(dir, { recursive: true, force: true });
-  await mkdir(dir, { recursive: true });
-  await execFileAsync("git", ["init"], { cwd: dir });
-  await execFileAsync("git", ["config", "user.email", "ledger@construction-ledger.local"], { cwd: dir });
-  await execFileAsync("git", ["config", "user.name", "Construction Ledger"], { cwd: dir });
+  await fs.promises.mkdir(dir, { recursive: true });
+  await git.init({ fs, dir, defaultBranch: "main" });
+  delete process.env.JOURNAL_GIT_REMOTE;
 }
 
 async function resetDatabase(): Promise<void> {
@@ -718,6 +725,13 @@ async function main() {
   await recordOverhead({ category: office, vendor: staples, amount: "210.00", date: "2026-07-10" });
 
   void blueRidgePlumbing; // seeded for use as a vendor option in the UI; not billed in this dataset
+
+  if (journalRemote) {
+    process.env.JOURNAL_GIT_REMOTE = journalRemote;
+    console.log(`\nPushing seeded journal history to ${journalRemote}...`);
+    await forcePushSeededJournal();
+    console.log("Pushed.");
+  }
 
   const [journalTxnCount, jobCount, billCount, employeeCount, laborEntryCount] = await Promise.all([
     prisma.journalTxn.count(),

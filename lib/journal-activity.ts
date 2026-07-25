@@ -1,8 +1,7 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import fs from "node:fs";
+import * as git from "isomorphic-git";
 import { prisma } from "./db";
-
-const execFileAsync = promisify(execFile);
+import { ensureJournalReady } from "./journal-git";
 
 function journalDir(): string {
   const dir = process.env.JOURNAL_DIR;
@@ -23,9 +22,6 @@ export interface ActivityEntry {
   memo: string | null;
 }
 
-const RECORD_SEP = "\x1e";
-const FIELD_SEP = "\x1f";
-
 // Reads the journal data repo's git history and, where a commit carries a
 // `txnid:` trailer (v2 spec §F13 — written by lib/transactions.ts since the
 // activity page was added), joins it back to the JournalTxn row for a
@@ -33,29 +29,27 @@ const FIELD_SEP = "\x1f";
 // (whose JournalTxn row is already gone), fall back to the commit subject —
 // which is already a human phrase, never raw journal syntax.
 export async function listJournalActivity(limit = 200): Promise<ActivityEntry[]> {
-  const cwd = journalDir();
-  const format = `%H${FIELD_SEP}%aI${FIELD_SEP}%s${FIELD_SEP}%b${RECORD_SEP}`;
+  await ensureJournalReady();
+  const dir = journalDir();
 
-  let stdout: string;
+  let commits: Awaited<ReturnType<typeof git.log>>;
   try {
-    ({ stdout } = await execFileAsync(
-      "git",
-      ["log", `--max-count=${limit}`, `--date=iso-strict`, `--format=${format}`],
-      { cwd, maxBuffer: 10 * 1024 * 1024 },
-    ));
+    commits = await git.log({ fs, dir, depth: limit });
   } catch {
     return []; // no commits yet (fresh journal repo)
   }
 
-  const parsed = stdout
-    .split(RECORD_SEP)
-    .map((record) => record.trim())
-    .filter(Boolean)
-    .map((record) => {
-      const [hash, dateStr, subject, body = ""] = record.split(FIELD_SEP);
-      const txnidMatch = body.match(/^txnid:\s*(\S+)/m);
-      return { hash, date: new Date(dateStr), subject, txnid: txnidMatch?.[1] ?? null };
-    });
+  const parsed = commits.map(({ oid, commit }) => {
+    const [subject, ...bodyParts] = commit.message.split("\n\n");
+    const body = bodyParts.join("\n\n");
+    const txnidMatch = body.match(/^txnid:\s*(\S+)/m);
+    return {
+      hash: oid,
+      date: new Date(commit.author.timestamp * 1000),
+      subject: subject.trim(),
+      txnid: txnidMatch?.[1] ?? null,
+    };
+  });
 
   const txnids = parsed.map((p) => p.txnid).filter((t): t is string => t !== null);
   const journalTxns = txnids.length

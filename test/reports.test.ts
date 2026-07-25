@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import fs from "node:fs";
+import * as git from "isomorphic-git";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -42,7 +42,7 @@ describe("reports (integration, hermetic fixture)", () => {
   beforeAll(async () => {
     journalDir = await mkdtemp(path.join(tmpdir(), "reports-test-"));
     process.env.JOURNAL_DIR = journalDir;
-    await promisify(execFile)("git", ["init"], { cwd: journalDir });
+    await git.init({ fs, dir: journalDir, defaultBranch: "main" });
 
     jobCode = `TEST-WIP-${Date.now()}`;
     const job = await prisma.job.create({

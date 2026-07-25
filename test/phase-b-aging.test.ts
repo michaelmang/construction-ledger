@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import fs from "node:fs";
+import * as git from "isomorphic-git";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -28,7 +28,7 @@ describe("Phase B: AR/AP aging reconciles with hledger balances (v2 spec ยงF10/ย
   beforeAll(async () => {
     journalDir = await mkdtemp(path.join(tmpdir(), "phase-b-aging-test-"));
     process.env.JOURNAL_DIR = journalDir;
-    await promisify(execFile)("git", ["init"], { cwd: journalDir });
+    await git.init({ fs, dir: journalDir, defaultBranch: "main" });
   });
 
   afterEach(async () => {

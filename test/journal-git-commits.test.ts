@@ -4,12 +4,19 @@ import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import fs from "node:fs";
+import * as git from "isomorphic-git";
 import Decimal from "decimal.js";
 import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/transactions";
 import { prisma } from "@/lib/db";
 
 const execFileAsync = promisify(execFile);
 
+// Shells out to real git deliberately, even though writes now go through
+// isomorphic-git — a real `git rev-list` reading an isomorphic-git-written
+// repo is a valid cross-implementation sanity check that the commits it
+// produces are genuinely well-formed git history, not just something
+// isomorphic-git's own log() happens to agree with itself about.
 async function commitCount(cwd: string): Promise<number> {
   try {
     const { stdout } = await execFileAsync("git", ["rev-list", "--count", "HEAD"], { cwd });
@@ -29,7 +36,7 @@ describe("git auto-commit on every write path", () => {
   beforeAll(async () => {
     journalDir = await mkdtemp(path.join(tmpdir(), "git-commit-test-"));
     process.env.JOURNAL_DIR = journalDir;
-    await execFileAsync("git", ["init"], { cwd: journalDir });
+    await git.init({ fs, dir: journalDir, defaultBranch: "main" });
   });
 
   afterAll(async () => {

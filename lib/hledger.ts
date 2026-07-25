@@ -4,6 +4,7 @@ import { copyFile, chmod, access } from "node:fs/promises";
 import path from "node:path";
 import Decimal from "decimal.js";
 import { money } from "./money";
+import { ensureJournalReady } from "./journal-git";
 
 const execFileAsync = promisify(execFile);
 
@@ -61,6 +62,7 @@ export class HledgerError extends Error {
 // so job codes and tags can never be used for command injection.
 async function runHledgerJson(args: string[]): Promise<unknown> {
   try {
+    await ensureJournalReady();
     const { stdout } = await execFileAsync(
       await hledgerBinaryPath(),
       ["-f", mainJournalPath(), ...args, "--output-format=json"],
@@ -196,6 +198,7 @@ export async function print(query: string[] = []): Promise<JournalTransaction[]>
 // Returns null when clean, or the error text when it is not.
 export async function check(): Promise<string | null> {
   try {
+    await ensureJournalReady();
     await execFileAsync(await hledgerBinaryPath(), ["-f", mainJournalPath(), "check"]);
     return null;
   } catch (err) {

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import fs from "node:fs";
+import * as git from "isomorphic-git";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -25,7 +25,7 @@ describe("action edge cases (Phase 5 hardening)", () => {
   beforeAll(async () => {
     journalDir = await mkdtemp(path.join(tmpdir(), "edge-case-test-"));
     process.env.JOURNAL_DIR = journalDir;
-    await promisify(execFile)("git", ["init"], { cwd: journalDir });
+    await git.init({ fs, dir: journalDir, defaultBranch: "main" });
   });
 
   afterEach(async () => {

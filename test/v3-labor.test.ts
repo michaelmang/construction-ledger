@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import fs from "node:fs";
+import * as git from "isomorphic-git";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -27,7 +27,7 @@ describe("v3: cost type tag + burdened labor (spec §F17/§F18/§F19)", () => {
   beforeAll(async () => {
     journalDir = await mkdtemp(path.join(tmpdir(), "v3-labor-test-"));
     process.env.JOURNAL_DIR = journalDir;
-    await promisify(execFile)("git", ["init"], { cwd: journalDir });
+    await git.init({ fs, dir: journalDir, defaultBranch: "main" });
   });
 
   afterEach(async () => {
@@ -249,7 +249,7 @@ describe("v3: cost type pivot reports + labor % of revenue (spec §F19, build in
   beforeAll(async () => {
     journalDir = await mkdtemp(path.join(tmpdir(), "v3-pivot-test-"));
     process.env.JOURNAL_DIR = journalDir;
-    await promisify(execFile)("git", ["init"], { cwd: journalDir });
+    await git.init({ fs, dir: journalDir, defaultBranch: "main" });
   });
 
   afterAll(async () => {

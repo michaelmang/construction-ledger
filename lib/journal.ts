@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import Decimal from "decimal.js";
 import { toJournalAmount } from "./money";
+import { ensureJournalReady } from "./journal-git";
 
 export interface Posting {
   account: string;
@@ -128,6 +129,7 @@ export function writeEntry(
   input: Omit<EntryInput, "tags"> & { tags?: Record<string, string> },
 ): Promise<{ txnid: string }> {
   return serialized(async () => {
+    await ensureJournalReady();
     const txnid = input.tags?.txnid ?? randomUUID();
     const tags = { ...input.tags, txnid };
     const entry: EntryInput = { ...input, tags };
@@ -185,6 +187,7 @@ export function replaceEntry(
   input: Omit<EntryInput, "tags"> & { tags?: Record<string, string> },
 ): Promise<void> {
   return serialized(async () => {
+    await ensureJournalReady();
     const found = await findEntryBlock(txnid);
     if (!found) {
       throw new JournalValidationError(`No journal entry found with txnid ${txnid}`);
@@ -198,6 +201,7 @@ export function replaceEntry(
 
 export function deleteEntry(txnid: string): Promise<void> {
   return serialized(async () => {
+    await ensureJournalReady();
     const found = await findEntryBlock(txnid);
     if (!found) {
       throw new JournalValidationError(`No journal entry found with txnid ${txnid}`);
