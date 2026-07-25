@@ -10,5 +10,10 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    // `migrate dev` needs a scratch database for drift detection. Locally
+    // this is `prisma dev`'s own shadow instance (see `npx prisma dev ls`);
+    // in production `migrate deploy` never touches this (no shadow db
+    // needed for deploy-only migrations), so this is dev-only.
+    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
   },
 });
