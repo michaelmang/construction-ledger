@@ -77,6 +77,7 @@ export function AreaChart({
       </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
         className="w-full"
         style={{ height }}
         onMouseMove={handleMove}

@@ -13,9 +13,30 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : "http://localhost:3000";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Construction Ledger",
   description: "Job-centric accounting for a construction business",
+  openGraph: {
+    title: "Construction Ledger",
+    description: "Job-costed accounting for construction, built on hledger.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Construction Ledger",
+    description: "Job-costed accounting for construction, built on hledger.",
+  },
+  // Internal testing tool — not meant for public discovery. See also
+  // app/robots.ts for the site-wide crawler directive.
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 // Every page reads live data from Prisma and the hledger journal. Next.js's
