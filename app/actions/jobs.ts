@@ -103,7 +103,7 @@ export async function setJobStatus(
 
   revalidatePath(`/jobs/${data.jobId}`);
   revalidatePath("/jobs");
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   return ok({ jobId: data.jobId, status: data.status });
 }
 

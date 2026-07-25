@@ -47,7 +47,7 @@ export default async function DashboardPage({
         <StatsRow />
       </Suspense>
 
-      <DateRangeControl basePath="/" resolved={range} />
+      <DateRangeControl basePath="/dashboard" resolved={range} />
 
       <section className="rounded-xl border border-border bg-surface p-5">
         <div className="text-[11px] font-medium uppercase tracking-widest text-text-3">Cash Trend</div>

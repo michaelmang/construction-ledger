@@ -8,7 +8,7 @@ export default function NotFound() {
       <p className="max-w-sm text-sm text-text-2">
         This page doesn&apos;t exist, or the item you&apos;re looking for was removed.
       </p>
-      <Link href="/" className={primaryButtonClass}>
+      <Link href="/dashboard" className={primaryButtonClass}>
         Back to Dashboard
       </Link>
     </div>

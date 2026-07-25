@@ -22,7 +22,7 @@ export default function Error({
         <button type="button" onClick={reset} className={primaryButtonClass}>
           Try Again
         </button>
-        <Link href="/" className={secondaryButtonClass}>
+        <Link href="/dashboard" className={secondaryButtonClass}>
           Back to Dashboard
         </Link>
       </div>
