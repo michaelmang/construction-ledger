@@ -141,3 +141,15 @@ export async function listOverheadBills() {
     orderBy: { date: "desc" },
   });
 }
+
+export async function listEmployees() {
+  return prisma.employee.findMany({ orderBy: { name: "asc" } });
+}
+
+export async function listActiveEmployees() {
+  return prisma.employee.findMany({ where: { active: true }, orderBy: { name: "asc" } });
+}
+
+export async function getLaborEntry(txnid: string) {
+  return prisma.laborEntry.findUnique({ where: { txnid }, include: { employee: true } });
+}

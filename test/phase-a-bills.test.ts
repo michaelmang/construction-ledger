@@ -85,6 +85,7 @@ describe("Phase A: vendors, bills, pay-bill flow (v2 spec §F1/§F2/§F6/§F8/§
       jobId: job.data.id,
       costCodeId: costCode.data.id,
       vendorId: vendor.data.id,
+      costType: "material",
       amount: "5000.00",
       date: "2026-07-24",
     });
@@ -147,6 +148,7 @@ describe("Phase A: vendors, bills, pay-bill flow (v2 spec §F1/§F2/§F6/§F8/§
       jobId: job.data.id,
       costCodeId: costCode.data.id,
       vendorId: vendor.data.id,
+      costType: "material",
       amount: "1000.00",
       date: "2026-07-24",
     });
@@ -174,6 +176,7 @@ describe("Phase A: vendors, bills, pay-bill flow (v2 spec §F1/§F2/§F6/§F8/§
       jobId: job.data.id,
       costCodeId: costCode.data.id,
       vendorId: vendor.data.id,
+      costType: "material",
       amount: "10000.00",
       retainageWithheld: "1000.00",
       date: "2026-07-24",

@@ -82,6 +82,7 @@ describe("action edge cases (Phase 5 hardening)", () => {
       jobId: jobResult.data.id,
       costCodeId: costCode.id,
       vendorId: vendorResult.data.id,
+      costType: "material",
       amount: "100.00",
       date: "2026-07-24",
     });

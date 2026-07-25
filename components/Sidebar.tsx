@@ -10,6 +10,7 @@ const links = [
   { href: "/reports", label: "Reports" },
   { href: "/cost-codes", label: "Cost Codes" },
   { href: "/overhead", label: "Overhead" },
+  { href: "/employees", label: "Employees" },
   { href: "/activity", label: "Activity" },
   { href: "/accounts", label: "Accounts" },
 ];

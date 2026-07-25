@@ -5,6 +5,7 @@ import { commitJournalChanges } from "./journal-git";
 
 export type TransactionKind =
   | "expense"
+  | "labor"
   | "payment"
   | "progress-billing"
   | "bill-payment"

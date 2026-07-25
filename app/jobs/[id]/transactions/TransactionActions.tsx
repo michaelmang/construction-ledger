@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { deleteExpense } from "@/app/actions/expenses";
 import { deletePayment } from "@/app/actions/payments";
+import { deleteLaborCost } from "@/app/actions/labor";
 
 export function TransactionActions({
   jobId,
@@ -20,19 +21,22 @@ export function TransactionActions({
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  if (kind !== "expense" && kind !== "payment") {
+  if (kind !== "expense" && kind !== "payment" && kind !== "labor") {
     return null; // editing/deleting other kinds isn't wired up yet
   }
 
   const editHref =
     kind === "expense"
       ? `/jobs/${jobId}/transactions/expenses/edit/${txnid}`
-      : `/jobs/${jobId}/transactions/payments/edit/${txnid}`;
+      : kind === "labor"
+        ? `/jobs/${jobId}/transactions/labor/edit/${txnid}`
+        : `/jobs/${jobId}/transactions/payments/edit/${txnid}`;
 
   async function handleDelete() {
     setDeleting(true);
     setError(null);
-    const result = kind === "expense" ? await deleteExpense(txnid) : await deletePayment(txnid);
+    const result =
+      kind === "expense" ? await deleteExpense(txnid) : kind === "labor" ? await deleteLaborCost(txnid) : await deletePayment(txnid);
     if (!result.ok) {
       setError(result.error);
       setDeleting(false);

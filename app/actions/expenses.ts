@@ -27,6 +27,7 @@ async function buildExpenseEntry(
   jobId: number,
   costCodeId: number,
   vendorId: number,
+  costType: string,
   amountStr: string,
   retainageWithheldStr: string | undefined,
   date: string,
@@ -76,7 +77,7 @@ async function buildExpenseEntry(
       jobId: job.id,
       date,
       description: description ? `${vendor.name} - ${description}` : vendor.name,
-      tags: { job: job.code, code: costCode.code, vendor: vendorSlug },
+      tags: { job: job.code, code: costCode.code, vendor: vendorSlug, costtype: costType },
       postings,
       amount,
       memo: `${vendor.name}${description ? " - " + description : ""}`,
@@ -105,6 +106,7 @@ export async function recordExpense(
       data.jobId,
       data.costCodeId,
       data.vendorId,
+      data.costType,
       data.amount,
       data.retainageWithheld,
       data.date,
@@ -125,6 +127,7 @@ export async function recordExpense(
         retainageWithheld: retainageWithheld.toFixed(2),
         date: new Date(data.date),
         description: data.description,
+        costType: data.costType,
         txnid,
       },
     });
@@ -151,6 +154,7 @@ export async function editExpense(
       data.jobId,
       data.costCodeId,
       data.vendorId,
+      data.costType,
       data.amount,
       data.retainageWithheld,
       data.date,
@@ -173,6 +177,7 @@ export async function editExpense(
         retainageWithheld: retainageWithheld.toFixed(2),
         date: new Date(data.date),
         description: data.description,
+        costType: data.costType,
       },
     });
 

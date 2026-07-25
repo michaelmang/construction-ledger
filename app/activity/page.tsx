@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const KIND_LABEL: Record<string, string> = {
   expense: "Expense",
+  labor: "Labor",
   payment: "Payment",
   "progress-billing": "Progress Billing",
   "bill-payment": "Bill Payment",
@@ -18,6 +19,7 @@ const KIND_LABEL: Record<string, string> = {
 
 const KIND_TONE: Record<string, PillTone> = {
   expense: "negative",
+  labor: "negative",
   payment: "positive",
   "progress-billing": "positive",
   "bill-payment": "negative",

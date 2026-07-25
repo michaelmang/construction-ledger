@@ -28,6 +28,7 @@ model Job {
   changeOrders ChangeOrder[]
   billings     ProgressBilling[]
   bills        Bill[]
+  laborEntries LaborEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -39,8 +40,9 @@ model CostCode {
   name        String
   csiDivision String?
 
-  budgets JobBudget[]
-  bills   Bill[]
+  budgets      JobBudget[]
+  bills        Bill[]
+  laborEntries LaborEntry[]
 }
 
 model JobBudget {
@@ -106,7 +108,7 @@ model JournalTxn {
   id        Int      @id @default(autoincrement())
   txnid     String   @unique
   jobId     Int?
-  kind      String // expense | payment | progress-billing | bill-payment | overhead-expense | opening-balance
+  kind      String // expense | labor | payment | progress-billing | bill-payment | overhead-expense | opening-balance
   date      DateTime
   amount    Decimal
   memo      String?
@@ -158,6 +160,7 @@ model Bill {
   status             String    @default("open") // open | partial | paid
   date               DateTime
   description        String?
+  costType           String? // labor | material | subcontract | equipment | other — required for job bills going forward (v3 spec §F17), NULL for overhead bills and pre-v3 entries until backfilled
   txnid              String    @unique // the expense journal entry that created this bill
 
   vendor           Vendor            @relation(fields: [vendorId], references: [id])
@@ -177,6 +180,49 @@ model BillPayment {
   txnid  String   @unique // the payment journal entry
 
   bill Bill @relation(fields: [billId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+// v3 spec §F19: an employee's rate components. burdenedRate is not stored
+// here — it's computed (lib/labor.ts) at entry time and snapshotted onto the
+// LaborEntry row, so a later rate change doesn't rewrite the cost of past
+// work. Rates are decimal fractions of base rate (0.0765 = 7.65%), per the
+// convention documented in lib/labor.ts.
+model Employee {
+  id             Int      @id @default(autoincrement())
+  name           String   @unique
+  baseRate       Decimal
+  payrollTaxPct  Decimal  @default(0)
+  workersCompPct Decimal  @default(0)
+  benefitsPct    Decimal  @default(0)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  laborEntries LaborEntry[]
+}
+
+// A burdened labor cost posted against a job/cost code. Mirrors Bill's role
+// for expenses: the Prisma-side record paired 1:1 with a journal entry
+// (kind: "labor"), keyed by txnid so edit/delete can find it without
+// re-parsing the journal (v3 spec §F18/§F19).
+model LaborEntry {
+  id             Int      @id @default(autoincrement())
+  txnid          String   @unique
+  employeeId     Int
+  jobId          Int
+  costCodeId     Int
+  date           DateTime
+  hours          Decimal
+  baseRate       Decimal // snapshot from Employee at entry time
+  burdenedRate   Decimal // snapshot from Employee at entry time
+  grossAmount    Decimal // baseRate * hours — display only, not posted
+  burdenedAmount Decimal // burdenedRate * hours — the amount posted to the journal
+  memo           String?
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  job      Job      @relation(fields: [jobId], references: [id])
+  costCode CostCode @relation(fields: [costCodeId], references: [id])
 
   createdAt DateTime @default(now())
 }

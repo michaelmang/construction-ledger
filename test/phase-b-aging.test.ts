@@ -166,6 +166,7 @@ describe("Phase B: AR/AP aging reconciles with hledger balances (v2 spec ยงF10/ย
       jobId: job.data.id,
       costCodeId: costCode.data.id,
       vendorId: vendor.data.id,
+      costType: "material",
       amount: "8000.00",
       retainageWithheld: "800.00",
       date: "2026-06-01",

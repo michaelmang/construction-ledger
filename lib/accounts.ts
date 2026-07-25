@@ -38,12 +38,27 @@ export function equityOpeningBalances(): string {
   return "equity:opening balances";
 }
 
+// Labor is not a vendor bill (no vendor, no AP) — it clears through a single
+// accrued-payroll liability instead (v3 spec §F19 design decision 4). Actual
+// payroll payment is deferred, unchanged from prior scope decisions.
+export function accruedPayroll(): string {
+  return "liabilities:accrued payroll";
+}
+
 // AP/retainage accounts are keyed by this slug, computed once from the
 // vendor's stored name, so bill creation and bill payment always agree on
 // the account path (v2 spec §F6 — free-typed vendor names used to silently
 // fork the AP account on a typo).
 export function vendorAccountSlug(vendorName: string): string {
   return vendorName.trim().toLowerCase();
+}
+
+// Same convention as vendorAccountSlug, used for the `employee:` tag on
+// labor entries (v3 spec §F19). Labor doesn't get a per-employee account —
+// all labor clears through the single accrued-payroll liability — this slug
+// is for tagging/filtering only.
+export function employeeSlug(employeeName: string): string {
+  return employeeName.trim().toLowerCase();
 }
 
 // Turns an hledger account path into construction-first language for the UI

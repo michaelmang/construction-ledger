@@ -3,9 +3,11 @@ import { Money } from "@/components/Money";
 import { TransactionActions } from "./TransactionActions";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { tableWrapClass, tableClass, theadClass, thClass, tbodyClass, trClass } from "@/components/table";
+import { COST_TYPES, COST_TYPE_LABEL } from "@/lib/cost-types";
 
 const KIND_LABELS: Record<string, string> = {
   expense: "Expense",
+  labor: "Labor",
   payment: "Payment",
   "progress-billing": "Progress Billing",
   "bill-payment": "Bill Payment",
@@ -21,10 +23,18 @@ export default async function JobTransactionsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ q?: string; from?: string; to?: string; costCode?: string; vendor?: string; kind?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    from?: string;
+    to?: string;
+    costCode?: string;
+    vendor?: string;
+    kind?: string;
+    costType?: string;
+  }>;
 }) {
   const { id } = await params;
-  const { q, from, to, costCode, vendor, kind } = await searchParams;
+  const { q, from, to, costCode, vendor, kind, costType } = await searchParams;
   const jobId = Number(id);
 
   const job = await getJob(jobId);
@@ -37,6 +47,7 @@ export default async function JobTransactionsPage({
   if (to) extraQueryTerms.push(`date:-${to.replace(/-/g, "")}`);
   if (costCode) extraQueryTerms.push(`tag:code=${costCode}`);
   if (vendor) extraQueryTerms.push(`tag:vendor=${vendor}`);
+  if (costType) extraQueryTerms.push(`tag:costtype=${costType}`);
 
   let groups = await getJobTransactionsGrouped(job.code, extraQueryTerms);
 
@@ -97,6 +108,17 @@ export default async function JobTransactionsPage({
             {Object.entries(KIND_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-text-3">Cost Type</label>
+          <select name="costType" defaultValue={costType ?? ""} className={filterInputClass}>
+            <option value="">All</option>
+            {COST_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {COST_TYPE_LABEL[t]}
               </option>
             ))}
           </select>

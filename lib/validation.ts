@@ -1,6 +1,16 @@
 import { z } from "zod";
+import { COST_TYPES } from "./cost-types";
 
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+
+export const costTypeSchema = z.enum(COST_TYPES);
+
+// Expenses go through recordExpense/editExpense; labor has its own action
+// (recordLaborCost) since it takes an employee + hours instead of a vendor +
+// amount, so "labor" is excluded here (v3 spec §F19 design decision 5).
+export const expenseCostTypeSchema = z.enum(
+  COST_TYPES.filter((t) => t !== "labor") as Exclude<(typeof COST_TYPES)[number], "labor">[],
+);
 
 // decimal.js-compatible amount: accept string or number, require it to parse
 // as a finite decimal. Callers convert to Decimal after validation.
@@ -63,6 +73,7 @@ export const recordExpenseSchema = z.object({
   jobId: z.number().int().positive(),
   costCodeId: z.number().int().positive(),
   vendorId: z.number().int().positive(),
+  costType: expenseCostTypeSchema, // required (v3 spec §F17)
   amount: positiveDecimalAmount,
   retainageWithheld: nonNegativeDecimalAmount.optional(), // withheld from this sub's bill (v2 spec §F1)
   date: isoDate,
@@ -154,3 +165,38 @@ export const approveChangeOrderSchema = z.object({
   approvedDate: isoDate,
 });
 export type ApproveChangeOrderInput = z.infer<typeof approveChangeOrderSchema>;
+
+// v3 spec §F19: rate components are decimal fractions of base rate (see
+// lib/labor.ts for the burden formula).
+export const createEmployeeSchema = z.object({
+  name: z.string().min(1, "Employee name is required"),
+  baseRate: positiveDecimalAmount,
+  payrollTaxPct: nonNegativeDecimalAmount.optional(),
+  workersCompPct: nonNegativeDecimalAmount.optional(),
+  benefitsPct: nonNegativeDecimalAmount.optional(),
+});
+export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
+
+export const updateEmployeeSchema = createEmployeeSchema.extend({
+  id: z.number().int().positive(),
+});
+export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
+
+export const setEmployeeActiveSchema = z.object({
+  id: z.number().int().positive(),
+  active: z.boolean(),
+});
+export type SetEmployeeActiveInput = z.infer<typeof setEmployeeActiveSchema>;
+
+export const recordLaborSchema = z.object({
+  jobId: z.number().int().positive(),
+  costCodeId: z.number().int().positive(),
+  employeeId: z.number().int().positive(),
+  hours: positiveDecimalAmount,
+  date: isoDate,
+  memo: z.string().optional(),
+});
+export type RecordLaborInput = z.infer<typeof recordLaborSchema>;
+
+export const editLaborSchema = recordLaborSchema.extend({ txnid: txnidSchema });
+export type EditLaborInput = z.infer<typeof editLaborSchema>;
