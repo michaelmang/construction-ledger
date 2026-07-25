@@ -48,7 +48,7 @@ export async function recordTransaction(
     },
   });
 
-  await commitJournalChanges(commitMessage);
+  await commitJournalChanges(withTxnidTrailer(commitMessage, txnid));
   return { txnid };
 }
 
@@ -74,7 +74,7 @@ export async function updateTransaction(
     },
   });
 
-  await commitJournalChanges(commitMessage);
+  await commitJournalChanges(withTxnidTrailer(commitMessage, txnid));
 }
 
 export async function removeTransaction(
@@ -83,5 +83,12 @@ export async function removeTransaction(
 ): Promise<void> {
   await deleteEntry(txnid);
   await prisma.journalTxn.delete({ where: { txnid } });
-  await commitJournalChanges(commitMessage);
+  await commitJournalChanges(withTxnidTrailer(commitMessage, txnid));
+}
+
+// A git trailer, not part of the human-readable commit subject, so the
+// Activity page (v2 spec §F13) can join a commit back to its JournalTxn row
+// without parsing journal syntax out of the message text.
+function withTxnidTrailer(commitMessage: string, txnid: string): string {
+  return `${commitMessage}\n\ntxnid: ${txnid}`;
 }
