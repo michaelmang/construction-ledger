@@ -1,20 +1,25 @@
 import Link from "next/link";
 import { getJobProfitability, getJobCostTrend } from "@/lib/reports";
+import { resolveDateRangeParams } from "@/lib/date-range";
 import { formatUSD } from "@/lib/money";
 import { StatCard } from "@/components/ui/StatCard";
 import { AreaChart } from "@/components/ui/AreaChart";
+import { DateRangeControl } from "@/components/ui/DateRangeControl";
 import { primaryButtonClass, secondaryButtonClass } from "@/components/form";
 
 export default async function JobOverviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
 }) {
   const { id } = await params;
   const jobId = Number(id);
+  const range = resolveDateRangeParams(await searchParams);
   const [{ wip, profitability, cfoPctCompleteEstimate }, costTrend] = await Promise.all([
     getJobProfitability(jobId),
-    getJobCostTrend(jobId),
+    getJobCostTrend(jobId, range),
   ]);
 
   return (
@@ -53,6 +58,8 @@ export default async function JobOverviewPage({
           tone={profitability.actualMarginToDate.isNegative() ? "negative" : "positive"}
         />
       </section>
+
+      <DateRangeControl basePath={`/jobs/${jobId}`} resolved={range} />
 
       <section className="rounded-xl border border-border bg-surface p-5">
         <div className="text-[11px] font-medium uppercase tracking-widest text-text-3">

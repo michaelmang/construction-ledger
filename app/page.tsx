@@ -9,11 +9,13 @@ import {
   getDashboardSummary,
   getLaborPercentTrend,
 } from "@/lib/reports";
+import { resolveDateRangeParams } from "@/lib/date-range";
 import { Money } from "@/components/Money";
 import { formatUSD } from "@/lib/money";
 import { StatCard } from "@/components/ui/StatCard";
 import { Pill } from "@/components/ui/Pill";
 import { AreaChart } from "@/components/ui/AreaChart";
+import { DateRangeControl } from "@/components/ui/DateRangeControl";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { tableWrapClass, tableClass, theadClass, thClass, tbodyClass, trClass, tdClass, tdNumericClass } from "@/components/table";
@@ -21,17 +23,23 @@ import { tableWrapClass, tableClass, theadClass, thClass, tbodyClass, trClass, t
 const RETAINAGE_OVERDUE_DAYS = 60;
 const AR_OVERDUE_DAYS = 30;
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+}) {
+  const range = resolveDateRangeParams(await searchParams);
+
   const [cash, trend, wipReports, retainageReports, arReports, overBudget, summary, laborTrend] =
     await Promise.all([
       getCashPositionSummary(),
-      getCashTrend(),
+      getCashTrend(range),
       getWipScheduleForActiveJobs(),
       getRetainageAgingForActiveJobs(),
       getArAgingForActiveJobs(),
       getOverBudgetAlerts(),
       getDashboardSummary(),
-      getLaborPercentTrend(),
+      getLaborPercentTrend(range),
     ]);
 
   const overdueRetainage = retainageReports.flatMap((r) =>
@@ -62,10 +70,10 @@ export default async function DashboardPage() {
         <StatCard label="Retainage Held" value={formatUSD(summary.totalRetainageHeld)} />
       </section>
 
+      <DateRangeControl basePath="/" resolved={range} />
+
       <section className="rounded-xl border border-border bg-surface p-5">
-        <div className="text-[11px] font-medium uppercase tracking-widest text-text-3">
-          Cash Trend (8 Weeks)
-        </div>
+        <div className="text-[11px] font-medium uppercase tracking-widest text-text-3">Cash Trend</div>
         <div className="mt-4">
           <AreaChart points={trend.map((p) => ({ label: p.date, value: p.netCash }))} format="usd" />
         </div>
@@ -74,7 +82,7 @@ export default async function DashboardPage() {
       <section className="rounded-xl border border-border bg-surface p-5">
         <div className="flex items-baseline justify-between">
           <div className="text-[11px] font-medium uppercase tracking-widest text-text-3">
-            Labor as % of Revenue (6 Months)
+            Labor as % of Revenue
           </div>
           <div className="font-mono text-sm tabular-nums text-text-2">
             {summary.laborPercentOfRevenue.toFixed(1)}% overall

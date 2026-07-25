@@ -20,6 +20,9 @@ import {
   getCostCodeBreakdown,
   getRetainageAging,
   getCashPosition,
+  getJobCostTrend,
+  getCashTrend,
+  getLaborPercentTrend,
 } from "@/lib/reports";
 
 // Hand-computed fixture (see comments below each figure):
@@ -100,7 +103,9 @@ describe("reports (integration, hermetic fixture)", () => {
       {
         kind: "expense",
         jobId,
-        date: "2026-06-05",
+        // Deliberately after the Phase 5 custom range below. Cost-to-date
+        // reports include it, but the time-series range must not.
+        date: "2026-07-31",
         description: "Carpentry vendor",
         tags: { job: jobCode, code: "06-CARPENTRY" },
         postings: [
@@ -208,5 +213,50 @@ describe("reports (integration, hermetic fixture)", () => {
     // total = 35,000 - 30,000 = 5,000
     expect(cash.total.toFixed(2)).toBe("5000.00");
     expect(cash.lines.some((l) => l.account === accountsReceivable(jobCode))).toBe(true);
+  });
+
+  // Phase 5 (v3 spec, Vercel migration): date-range drill-down. One fixture
+  // expense is after the requested end date, proving the final partial-month
+  // bucket does not include future entries.
+  it("buckets job costs by month over a custom range and coarsens beyond the point ceiling", async () => {
+    const to = new Date("2026-07-24T00:00:00");
+    const trend = await getJobCostTrend(jobId, { from: new Date("2026-06-01T00:00:00"), to });
+    expect(trend.map((p) => p.month)).toEqual(["2026-06", "2026-07"]);
+    expect(trend[0].costs).toBeCloseTo(10000, 2);
+    expect(trend[1].costs).toBeCloseTo(0, 2);
+
+    const longTrend = await getJobCostTrend(jobId, { from: new Date("2021-07-24T00:00:00"), to });
+    expect(longTrend.length).toBeLessThan(61); // fewer points than 61 natural monthly buckets -> coarsening triggered
+    expect(longTrend.length).toBeLessThanOrEqual(52);
+    const total = longTrend.reduce((sum, p) => sum + p.costs, 0);
+    expect(total).toBeCloseTo(10000, 2); // telescoping deltas honor the requested end date regardless of bucket width
+  });
+
+  it("samples cash weekly over a custom range and preserves the historical default point count", async () => {
+    const defaultTrend = await getCashTrend();
+    expect(defaultTrend.length).toBe(9); // 8 weeks + 1 point, unchanged default behavior
+
+    const customTrend = await getCashTrend({
+      from: new Date("2026-06-01T00:00:00"),
+      to: new Date("2026-06-15T00:00:00"),
+    });
+    expect(customTrend.map((p) => p.date)).toEqual(["2026-06-01", "2026-06-08", "2026-06-15"]);
+
+    const longTrend = await getCashTrend({
+      from: new Date("2020-01-01T00:00:00"),
+      to: new Date("2026-07-24T00:00:00"),
+    });
+    expect(longTrend.length).toBeLessThanOrEqual(53); // 52-point ceiling + 1
+  });
+
+  it("returns one point per month bucket for the labor % trend over a custom range", async () => {
+    const trend = await getLaborPercentTrend({
+      from: new Date("2026-06-01T00:00:00"),
+      to: new Date("2026-07-24T00:00:00"),
+    });
+    expect(trend.map((p) => p.month)).toEqual(["2026-06", "2026-07"]);
+    for (const p of trend) {
+      expect(Number.isFinite(p.laborPct)).toBe(true);
+    }
   });
 });

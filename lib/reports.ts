@@ -309,33 +309,140 @@ export async function getCashPosition(): Promise<CashPosition> {
   return balance(["type:AL"]);
 }
 
+// v3 spec (Vercel migration) Phase 5: date-range drill-down for trend
+// charts. `{ from, to }` are optional on all three trend functions; when
+// omitted each keeps its historical today-relative default so existing
+// callers (tests, any code not yet wired to a UI range control) see
+// unchanged behavior.
+export interface TrendRangeOptions {
+  from?: Date;
+  to?: Date;
+}
+
+// Hard ceiling on sample points per trend chart. One hledger `balance`
+// process spawn per point is fine at dashboard scale, but nothing bounds how
+// wide a custom range a user can type into DateRangeControl — without this a
+// multi-year range would spawn hundreds of processes on one page render.
+// Beyond the ceiling the sampling interval widens (coarsens) instead of
+// rejecting the range or silently truncating it.
+const MAX_TREND_POINTS = 52;
+
+// Concurrent hledger process spawns per trend chart. Unbounded Promise.all
+// across 50+ sample points is its own failure mode on a small serverless
+// function instance; sequential (`for`-`await`, the prior approach) was
+// correct but slow. A small worker pool bounds both.
+const TREND_CONCURRENCY = 8;
+
+async function mapBounded<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const i = cursor++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
+
+function addDays(d: Date, n: number): Date {
+  const copy = new Date(d);
+  copy.setDate(copy.getDate() + n);
+  return copy;
+}
+
+function addMonths(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
+
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function daysBetween(a: Date, b: Date): number {
+  return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function monthsBetween(a: Date, b: Date): number {
+  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+}
+
+function toHledgerDateArg(d: Date): string {
+  return d.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+// Weekly natural cadence (getCashTrend's granularity), coarsening beyond
+// MAX_TREND_POINTS. Returns count+1 sample dates from `from` through `to`
+// inclusive.
+function weeklySampleDates(from: Date, to: Date): Date[] {
+  const totalDays = Math.max(daysBetween(from, to), 1);
+  const count = Math.min(Math.max(Math.ceil(totalDays / 7), 1), MAX_TREND_POINTS);
+  const stepDays = totalDays / count;
+  return Array.from({ length: count + 1 }, (_, i) => addDays(from, Math.round(i * stepDays)));
+}
+
+interface MonthTrendPeriod {
+  label: Date; // first-of-month label for this bucket
+  boundary: Date; // exclusive upper bound for the cumulative `balance` query
+}
+
+// Monthly natural cadence (getJobCostTrend/getLaborPercentTrend's
+// granularity), coarsening beyond MAX_TREND_POINTS the same way
+// weeklySampleDates does. `boundary` is always one bucket-width past
+// `label`. The final boundary is capped at the requested end date (inclusive),
+// so a range ending mid-month never leaks later transactions into its last
+// bucket.
+function monthTrendPeriods(from: Date, to: Date): MonthTrendPeriod[] {
+  const start = startOfMonth(from);
+  const end = startOfMonth(to);
+  const totalMonths = Math.max(monthsBetween(start, end), 0) + 1;
+  const stepMonths = Math.max(Math.ceil(totalMonths / MAX_TREND_POINTS), 1);
+  const pointCount = Math.ceil(totalMonths / stepMonths);
+
+  return Array.from({ length: pointCount }, (_, k) => ({
+    label: addMonths(start, k * stepMonths),
+    boundary: (() => {
+      const naturalBoundary = addMonths(start, (k + 1) * stepMonths);
+      const inclusiveEnd = addDays(to, 1);
+      return naturalBoundary < inclusiveEnd ? naturalBoundary : inclusiveEnd;
+    })(),
+  }));
+}
+
 export interface MonthlyCostPoint {
   month: string; // YYYY-MM
-  costs: number; // costs incurred that month, not cumulative
+  costs: number; // costs incurred that bucket, not cumulative
 }
 
 // Per-month cost totals for a job's overview chart (v2 spec §4.4). Samples
 // cumulative costs-to-date at each month boundary and takes deltas, same
 // as-of-date approach as getCashTrend for the same reason: simple to reason
 // about correct.
-export async function getJobCostTrend(jobId: number, months: number = 6): Promise<MonthlyCostPoint[]> {
+export async function getJobCostTrend(
+  jobId: number,
+  opts: TrendRangeOptions = {},
+): Promise<MonthlyCostPoint[]> {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
-  const today = new Date();
-  const cumulative: { month: string; total: Decimal }[] = [];
+  const to = opts.to ?? new Date();
+  const from = opts.from ?? addMonths(to, -6);
+  const periods = monthTrendPeriods(from, to);
 
-  for (let i = months; i >= 0; i--) {
-    const boundary = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
-    const dateArg = boundary.toISOString().slice(0, 10).replace(/-/g, "");
-    const { total } = await balance([`tag:job=${job.code}`, "type:x", `date:-${dateArg}`]);
-    const monthLabel = new Date(today.getFullYear(), today.getMonth() - i, 1)
-      .toISOString()
-      .slice(0, 7);
-    cumulative.push({ month: monthLabel, total });
-  }
+  const [beforeRange, cumulative] = await Promise.all([
+    balance([`tag:job=${job.code}`, "type:x", `date:-${toHledgerDateArg(from)}`]),
+    mapBounded(periods, TREND_CONCURRENCY, async ({ boundary }) => {
+      const { total } = await balance([`tag:job=${job.code}`, "type:x", `date:-${toHledgerDateArg(boundary)}`]);
+      return total;
+    }),
+  ]);
 
-  return cumulative.map((point, i) => ({
-    month: point.month,
-    costs: (i === 0 ? point.total : point.total.minus(cumulative[i - 1].total)).toNumber(),
+  return periods.map((p, i) => ({
+    month: p.label.toISOString().slice(0, 7),
+    costs: (i === 0 ? cumulative[0].minus(beforeRange.total) : cumulative[i].minus(cumulative[i - 1])).toNumber(),
   }));
 }
 
@@ -347,25 +454,20 @@ export interface CashTrendPoint {
 // Weekly net-cash snapshots for the dashboard trend chart (v2 spec §F15).
 // Samples `hledger balance` as-of each week boundary rather than relying on
 // register()'s running-total semantics, so it's simple to reason about
-// correct — one call per point is fine at dashboard scale.
-export async function getCashTrend(weeks: number = 8): Promise<CashTrendPoint[]> {
-  const today = new Date();
-  const points: CashTrendPoint[] = [];
+// correct.
+export async function getCashTrend(opts: TrendRangeOptions = {}): Promise<CashTrendPoint[]> {
+  const to = opts.to ?? new Date();
+  const from = opts.from ?? addDays(to, -8 * 7);
+  const dates = weeklySampleDates(from, to);
 
-  for (let i = weeks; i >= 0; i--) {
-    const asOf = new Date(today);
-    asOf.setDate(asOf.getDate() - i * 7);
-    const dateStr = asOf.toISOString().slice(0, 10);
+  const totals = await mapBounded(dates, TREND_CONCURRENCY, async (asOf) => {
     // hledger's `date:-DATE` end boundary is exclusive, so query the day
     // after to include everything dated on `asOf` itself.
-    const inclusiveEnd = new Date(asOf);
-    inclusiveEnd.setDate(inclusiveEnd.getDate() + 1);
-    const dateArg = inclusiveEnd.toISOString().slice(0, 10).replace(/-/g, "");
-    const { total } = await balance(["type:AL", `date:-${dateArg}`]);
-    points.push({ date: dateStr, netCash: total.toNumber() });
-  }
+    const { total } = await balance(["type:AL", `date:-${toHledgerDateArg(addDays(asOf, 1))}`]);
+    return total;
+  });
 
-  return points;
+  return dates.map((d, i) => ({ date: d.toISOString().slice(0, 10), netCash: totals[i].toNumber() }));
 }
 
 export interface CashPositionSummary {
@@ -549,28 +651,35 @@ export interface LaborPercentTrendPoint {
 // Monthly labor-cost-as-%-of-revenue for the dashboard trend chart (v3 spec
 // §F19). Same cumulative-sample-then-delta approach as getJobCostTrend/
 // getCashTrend, for the same reason: simple to reason about correct.
-export async function getLaborPercentTrend(months: number = 6): Promise<LaborPercentTrendPoint[]> {
-  const today = new Date();
-  const cumulative: { month: string; labor: Decimal; revenue: Decimal }[] = [];
+export async function getLaborPercentTrend(
+  opts: TrendRangeOptions = {},
+): Promise<LaborPercentTrendPoint[]> {
+  const to = opts.to ?? new Date();
+  const from = opts.from ?? addMonths(to, -6);
+  const periods = monthTrendPeriods(from, to);
 
-  for (let i = months; i >= 0; i--) {
-    const boundary = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
-    const dateArg = boundary.toISOString().slice(0, 10).replace(/-/g, "");
-    const [labor, income] = await Promise.all([
-      balance(["tag:costtype=labor", "type:x", `date:-${dateArg}`]),
-      balance(["type:R", `date:-${dateArg}`]),
-    ]);
-    const monthLabel = new Date(today.getFullYear(), today.getMonth() - i, 1)
-      .toISOString()
-      .slice(0, 7);
-    cumulative.push({ month: monthLabel, labor: labor.total, revenue: income.total.abs() });
-  }
+  const [beforeRange, cumulative] = await Promise.all([
+    Promise.all([
+      balance(["tag:costtype=labor", "type:x", `date:-${toHledgerDateArg(from)}`]),
+      balance(["type:R", `date:-${toHledgerDateArg(from)}`]),
+    ]),
+    mapBounded(periods, TREND_CONCURRENCY, async ({ boundary }) => {
+      const dateArg = toHledgerDateArg(boundary);
+      const [labor, income] = await Promise.all([
+        balance(["tag:costtype=labor", "type:x", `date:-${dateArg}`]),
+        balance(["type:R", `date:-${dateArg}`]),
+      ]);
+      return { labor: labor.total, revenue: income.total.abs() };
+    }),
+  ]);
 
-  return cumulative.map((point, i) => {
-    const prior = i === 0 ? { labor: new Decimal(0), revenue: new Decimal(0) } : cumulative[i - 1];
-    const laborDelta = point.labor.minus(prior.labor);
-    const revenueDelta = point.revenue.minus(prior.revenue);
+  return periods.map((p, i) => {
+    const prior = i === 0
+      ? { labor: beforeRange[0].total, revenue: beforeRange[1].total.abs() }
+      : cumulative[i - 1];
+    const laborDelta = cumulative[i].labor.minus(prior.labor);
+    const revenueDelta = cumulative[i].revenue.minus(prior.revenue);
     const laborPct = revenueDelta.isZero() ? new Decimal(0) : laborDelta.dividedBy(revenueDelta).times(100);
-    return { month: point.month, laborPct: laborPct.toNumber() };
+    return { month: p.label.toISOString().slice(0, 7), laborPct: laborPct.toNumber() };
   });
 }
