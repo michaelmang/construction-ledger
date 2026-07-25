@@ -9,19 +9,14 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    // This installed Prisma version's config type has no `directUrl` field
-    // (only `url`/`shadowDatabaseUrl`) — confirmed against
-    // node_modules/@prisma/config/dist/index.d.ts, despite some docs
-    // describing a newer/different API. Neon's pooled connection
-    // (PgBouncer, transaction mode) doesn't support the session-level
-    // advisory lock `migrate deploy` takes to guard against concurrent
-    // migrations, so the *CLI's* datasource url prefers DATABASE_URL_UNPOOLED
-    // (the name Vercel's Neon marketplace integration auto-provisions)
-    // when set. lib/db.ts's app-runtime adapter reads DATABASE_URL (pooled)
-    // independently, so this doesn't affect live request traffic. Locally
-    // there's no pooler distinction (`prisma dev`), so this falls back to
-    // DATABASE_URL when DATABASE_URL_UNPOOLED is unset.
-    url: process.env["DATABASE_URL_UNPOOLED"] ?? process.env["DATABASE_URL"],
+    // Verified against two real Vercel builds: DATABASE_URL (Neon's pooled
+    // endpoint) applied `migrate deploy`'s advisory lock fine, while
+    // DATABASE_URL_UNPOOLED (the direct endpoint) timed out waiting on that
+    // same lock twice in a row — the opposite of the generic PgBouncer
+    // advice, likely because the unpooled compute was cold/autosuspended
+    // and didn't wake inside Prisma's fixed 10s lock-acquire window. Use the
+    // pooled URL for both the CLI and lib/db.ts's app-runtime adapter.
+    url: process.env["DATABASE_URL"],
     // `migrate dev` needs a scratch database for drift detection. Locally
     // this is `prisma dev`'s own shadow instance (see `npx prisma dev ls`);
     // in production `migrate deploy` never touches this (no shadow db
