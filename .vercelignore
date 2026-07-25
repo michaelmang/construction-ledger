@@ -1,0 +1,4 @@
+# Local development configuration must never be uploaded to Vercel. Production
+# values are configured in the linked project's Environment Variables instead.
+.env
+.env.*
