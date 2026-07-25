@@ -21,7 +21,9 @@ import { recordTransaction } from "../lib/transactions";
 import {
   accountsPayable,
   accountsReceivable,
+  accruedPayroll,
   cash,
+  employeeSlug,
   equityOpeningBalances,
   expenseJobCostCode,
   expenseOverhead,
@@ -31,6 +33,8 @@ import {
   vendorAccountSlug,
 } from "../lib/accounts";
 import { formatUSD } from "../lib/money";
+import { laborAmounts } from "../lib/labor";
+import { CostType } from "../lib/cost-types";
 
 const execFileAsync = promisify(execFile);
 
@@ -52,6 +56,7 @@ async function resetJournalRepo(): Promise<void> {
 async function resetDatabase(): Promise<void> {
   await prisma.billPayment.deleteMany();
   await prisma.paymentApplication.deleteMany();
+  await prisma.laborEntry.deleteMany();
   await prisma.bill.deleteMany();
   await prisma.progressBilling.deleteMany();
   await prisma.changeOrder.deleteMany();
@@ -60,6 +65,7 @@ async function resetDatabase(): Promise<void> {
   await prisma.job.deleteMany();
   await prisma.costCode.deleteMany();
   await prisma.vendor.deleteMany();
+  await prisma.employee.deleteMany();
   await prisma.overheadCategory.deleteMany();
   await prisma.cashAccount.deleteMany();
 }
@@ -107,6 +113,7 @@ async function recordJobExpense(opts: {
   job: { id: number; code: string };
   costCode: { id: number; code: string };
   vendor: { id: number; name: string };
+  costType: CostType;
   amount: string;
   retainageWithheld?: string;
   date: string;
@@ -134,7 +141,7 @@ async function recordJobExpense(opts: {
       jobId: opts.job.id,
       date: opts.date,
       description: opts.description ? `${opts.vendor.name} - ${opts.description}` : opts.vendor.name,
-      tags: { job: opts.job.code, code: opts.costCode.code, vendor: vendorSlug },
+      tags: { job: opts.job.code, code: opts.costCode.code, vendor: vendorSlug, costtype: opts.costType },
       postings,
       amount,
       memo: opts.description ? `${opts.vendor.name} - ${opts.description}` : opts.vendor.name,
@@ -151,7 +158,65 @@ async function recordJobExpense(opts: {
       retainageWithheld: retainageWithheld.toFixed(2),
       date: new Date(opts.date),
       description: opts.description,
+      costType: opts.costType,
       txnid,
+    },
+  });
+
+  return txnid;
+}
+
+async function recordLaborCost(opts: {
+  job: { id: number; code: string };
+  costCode: { id: number; code: string };
+  employee: {
+    id: number;
+    name: string;
+    baseRate: Decimal.Value;
+    payrollTaxPct: Decimal.Value;
+    workersCompPct: Decimal.Value;
+    benefitsPct: Decimal.Value;
+  };
+  hours: string;
+  date: string;
+  memo?: string;
+}) {
+  const hours = new Decimal(opts.hours);
+  const { gross, burdened } = laborAmounts(opts.employee, hours);
+  const rate = burdened.dividedBy(hours);
+  const slug = employeeSlug(opts.employee.name);
+  const description = `${opts.employee.name} — ${hours.toFixed(2)}h ${opts.costCode.code}${opts.memo ? ` - ${opts.memo}` : ""}`;
+
+  const { txnid } = await recordTransaction(
+    {
+      kind: "labor",
+      jobId: opts.job.id,
+      date: opts.date,
+      description,
+      tags: { job: opts.job.code, code: opts.costCode.code, costtype: "labor", employee: slug },
+      postings: [
+        { account: expenseJobCostCode(opts.job.code, opts.costCode.code), amount: burdened },
+        { account: accruedPayroll(), amount: burdened.negated() },
+      ],
+      amount: burdened,
+      memo: description,
+    },
+    `labor: ${opts.job.code} ${opts.costCode.code} ${formatUSD(burdened)}`,
+  );
+
+  await prisma.laborEntry.create({
+    data: {
+      txnid,
+      employeeId: opts.employee.id,
+      jobId: opts.job.id,
+      costCodeId: opts.costCode.id,
+      date: new Date(opts.date),
+      hours: hours.toFixed(2),
+      baseRate: String(opts.employee.baseRate),
+      burdenedRate: rate.toFixed(2),
+      grossAmount: gross.toFixed(2),
+      burdenedAmount: burdened.toFixed(2),
+      memo: opts.memo,
     },
   });
 
@@ -357,6 +422,22 @@ async function main() {
     prisma.overheadCategory.create({ data: { code: "FUEL", name: "Fuel" } }),
   ]);
 
+  // Distinct burden profiles (v3 spec §F18/§F19) so the pivot report and
+  // "labor as % of revenue" trend render with real density: a carpenter
+  // (moderate workers' comp, no benefits), an electrician (higher workers'
+  // comp — trade-specific risk), a foreman (full benefits package).
+  const [carpenterEmployee, electricianEmployee, foremanEmployee] = await Promise.all([
+    prisma.employee.create({
+      data: { name: "Dave Kowalski", baseRate: "28.00", payrollTaxPct: "0.0765", workersCompPct: "0.09", benefitsPct: "0" },
+    }),
+    prisma.employee.create({
+      data: { name: "Marcus Lee", baseRate: "34.00", payrollTaxPct: "0.0765", workersCompPct: "0.14", benefitsPct: "0.06" },
+    }),
+    prisma.employee.create({
+      data: { name: "Renee Ortiz", baseRate: "38.00", payrollTaxPct: "0.0765", workersCompPct: "0.07", benefitsPct: "0.12" },
+    }),
+  ]);
+
   await openCashAccount({
     name: "checking",
     label: "Operating Checking",
@@ -394,6 +475,7 @@ async function main() {
     job: job1,
     costCode: concrete,
     vendor: aceConcrete,
+    costType: "material",
     amount: "4200.00",
     date: "2026-06-10",
   });
@@ -401,10 +483,19 @@ async function main() {
     job: job1,
     costCode: carpentry,
     vendor: ridgeFraming,
+    costType: "subcontract",
     amount: "8000.00",
     retainageWithheld: "800.00",
     date: "2026-06-25",
     description: "framing labor",
+  });
+  await recordLaborCost({
+    job: job1,
+    costCode: carpentry,
+    employee: carpenterEmployee,
+    hours: "24",
+    date: "2026-06-28",
+    memo: "self-performed trim carpentry",
   });
   const job1Billing1 = await createBilling({
     job: job1,
@@ -463,6 +554,7 @@ async function main() {
     job: job2,
     costCode: concrete,
     vendor: aceConcrete,
+    costType: "material",
     amount: "4800.00",
     date: "2026-04-10",
   });
@@ -470,6 +562,7 @@ async function main() {
     job: job2,
     costCode: carpentry,
     vendor: ridgeFraming,
+    costType: "subcontract",
     amount: "31500.00",
     date: "2026-04-28",
     description: "cabinetry framing — exceeded original estimate",
@@ -478,6 +571,7 @@ async function main() {
     job: job2,
     costCode: electrical,
     vendor: summitElectric,
+    costType: "subcontract",
     amount: "9000.00",
     date: "2026-05-20",
   });
@@ -485,8 +579,25 @@ async function main() {
     job: job2,
     costCode: finishes,
     vendor: sunriseFinish,
+    costType: "subcontract",
     amount: "12000.00",
     date: "2026-06-15",
+  });
+  await recordLaborCost({
+    job: job2,
+    costCode: electrical,
+    employee: electricianEmployee,
+    hours: "16",
+    date: "2026-05-25",
+    memo: "panel upgrade, self-performed",
+  });
+  await recordLaborCost({
+    job: job2,
+    costCode: finishes,
+    employee: foremanEmployee,
+    hours: "12",
+    date: "2026-06-20",
+    memo: "finish carpentry punch list",
   });
   const job2Billing1 = await createBilling({
     job: job2,
@@ -554,6 +665,7 @@ async function main() {
     job: job3,
     costCode: concrete,
     vendor: aceConcrete,
+    costType: "material",
     amount: "7800.00",
     date: "2025-11-15",
   });
@@ -561,6 +673,7 @@ async function main() {
     job: job3,
     costCode: carpentry,
     vendor: ridgeFraming,
+    costType: "subcontract",
     amount: "14200.00",
     date: "2025-12-10",
   });
@@ -568,6 +681,7 @@ async function main() {
     job: job3,
     costCode: electrical,
     vendor: summitElectric,
+    costType: "subcontract",
     amount: "5600.00",
     date: "2026-01-05",
   });
@@ -605,13 +719,16 @@ async function main() {
 
   void blueRidgePlumbing; // seeded for use as a vendor option in the UI; not billed in this dataset
 
-  const [journalTxnCount, jobCount, billCount] = await Promise.all([
+  const [journalTxnCount, jobCount, billCount, employeeCount, laborEntryCount] = await Promise.all([
     prisma.journalTxn.count(),
     prisma.job.count(),
     prisma.bill.count(),
+    prisma.employee.count(),
+    prisma.laborEntry.count(),
   ]);
   console.log(
-    `\nDone. Seeded ${jobCount} jobs, ${billCount} bills, ${journalTxnCount} journal transactions.`,
+    `\nDone. Seeded ${jobCount} jobs, ${billCount} bills, ${employeeCount} employees, ` +
+      `${laborEntryCount} labor entries, ${journalTxnCount} journal transactions.`,
   );
 }
 
