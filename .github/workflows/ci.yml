@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: tsc, eslint, vitest
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      JOURNAL_DIR: /tmp/construction-ledger-journal-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx eslint .
+      - run: npx prisma migrate deploy
+      - run: npm test
+
+  e2e:
+    name: Playwright smoke suite
+    runs-on: ubuntu-latest
+    # V4 spec Phase 3: "Playwright smoke suite in CI ... run against a
+    # local prod build with seeded data." A real Postgres service
+    # container, not the local `prisma dev` sandbox this project's authors
+    # use day to day — the latter has an aggressive idle-connection-close
+    # setting that's a known source of local-only flakiness (see
+    # vitest.config.ts's fileParallelism comment for the same class of
+    # issue), not something to replicate in CI.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      JOURNAL_DIR: /tmp/construction-ledger-journal-ci
+      AUTH_SECRET: ci-only-not-a-real-secret-do-not-reuse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx prisma migrate deploy
+      - run: npm run seed:demo
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
