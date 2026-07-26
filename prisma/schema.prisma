@@ -216,13 +216,14 @@ model OverheadCategory {
 // cash position reflects actual bank reality, not just journal activity
 // since the app was set up (v2 spec §F8).
 model CashAccount {
-  id             Int       @id @default(autoincrement())
-  name           String    @unique // short slug used in the hledger account path, e.g. "checking"
-  label          String // display label, e.g. "Operating Checking"
-  isDefault      Boolean   @default(false)
-  openingBalance Decimal   @default(0)
-  openingDate    DateTime?
-  createdAt      DateTime  @default(now())
+  id                  Int       @id @default(autoincrement())
+  name                String    @unique // short slug used in the hledger account path, e.g. "checking"
+  label               String // display label, e.g. "Operating Checking"
+  isDefault           Boolean   @default(false)
+  openingBalance      Decimal   @default(0)
+  openingDate         DateTime?
+  openingBalanceTxnid String? // the opening-balance journal entry, if the opening balance was ever nonzero — lets editOpeningBalance find it later (V4 spec Phase 2)
+  createdAt           DateTime  @default(now())
 }
 
 // A vendor bill (job-cost or overhead). Created alongside the expense journal

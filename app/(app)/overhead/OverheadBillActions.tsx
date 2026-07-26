@@ -3,52 +3,23 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { deleteExpense } from "@/app/actions/expenses";
-import { deletePayment } from "@/app/actions/payments";
-import { deleteLaborCost } from "@/app/actions/labor";
-import { deleteBillPayment } from "@/app/actions/bills";
+import { deleteOverheadExpense } from "@/app/actions/overhead";
 import { hapticTap, hapticSuccess, hapticError } from "@/lib/haptics";
 
-const EDITABLE_KINDS = new Set(["expense", "payment", "labor", "bill-payment"]);
-
-export function TransactionActions({
-  jobId,
-  txnid,
-  kind,
-}: {
-  jobId: number;
-  txnid: string;
-  kind: string | null;
-}) {
+export function OverheadBillActions({ txnid, paid }: { txnid: string; paid: boolean }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  if (!kind || !EDITABLE_KINDS.has(kind)) {
-    return null; // editing/deleting other kinds isn't wired up yet
+  if (paid) {
+    return <span className="text-xs text-text-3">Paid — see vendor page</span>;
   }
-
-  const editHref =
-    kind === "expense"
-      ? `/jobs/${jobId}/transactions/expenses/edit/${txnid}`
-      : kind === "labor"
-        ? `/jobs/${jobId}/transactions/labor/edit/${txnid}`
-        : kind === "bill-payment"
-          ? `/bill-payments/edit/${txnid}`
-          : `/jobs/${jobId}/transactions/payments/edit/${txnid}`;
 
   async function handleDelete() {
     setDeleting(true);
     setError(null);
-    const result =
-      kind === "expense"
-        ? await deleteExpense(txnid)
-        : kind === "labor"
-          ? await deleteLaborCost(txnid)
-          : kind === "bill-payment"
-            ? await deleteBillPayment(txnid)
-            : await deletePayment(txnid);
+    const result = await deleteOverheadExpense(txnid);
     if (!result.ok) {
       hapticError();
       setError(result.error);
@@ -62,7 +33,7 @@ export function TransactionActions({
   if (confirming) {
     return (
       <div className="flex items-center gap-2 text-xs">
-        <span className="text-text-2">Delete this entry?</span>
+        <span className="text-text-2">Delete?</span>
         <button
           type="button"
           onClick={handleDelete}
@@ -81,7 +52,7 @@ export function TransactionActions({
 
   return (
     <div className="flex items-center gap-3 text-xs">
-      <Link href={editHref} className="text-text-2 hover:underline">
+      <Link href={`/overhead/edit/${txnid}`} className="text-text-2 hover:underline">
         Edit
       </Link>
       <button

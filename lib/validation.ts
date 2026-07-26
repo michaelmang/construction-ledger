@@ -93,6 +93,9 @@ export const recordOverheadExpenseSchema = z.object({
 });
 export type RecordOverheadExpenseInput = z.infer<typeof recordOverheadExpenseSchema>;
 
+export const editOverheadExpenseSchema = recordOverheadExpenseSchema.extend({ txnid: txnidSchema });
+export type EditOverheadExpenseInput = z.infer<typeof editOverheadExpenseSchema>;
+
 export const createVendorSchema = z.object({
   name: z.string().min(1, "Vendor name is required"),
 });
@@ -113,6 +116,13 @@ export const createCashAccountSchema = z.object({
 });
 export type CreateCashAccountInput = z.infer<typeof createCashAccountSchema>;
 
+export const editOpeningBalanceSchema = z.object({
+  cashAccountId: z.number().int().positive(),
+  openingBalance: decimalAmount,
+  openingDate: isoDate.optional(),
+});
+export type EditOpeningBalanceInput = z.infer<typeof editOpeningBalanceSchema>;
+
 export const payBillSchema = z.object({
   billId: z.number().int().positive(),
   amount: positiveDecimalAmount,
@@ -120,6 +130,9 @@ export const payBillSchema = z.object({
   cashAccount: z.string().min(1).optional(),
 });
 export type PayBillInput = z.infer<typeof payBillSchema>;
+
+export const editBillPaymentSchema = payBillSchema.extend({ txnid: txnidSchema });
+export type EditBillPaymentInput = z.infer<typeof editBillPaymentSchema>;
 
 export const recordPaymentSchema = z.object({
   jobId: z.number().int().positive(),
