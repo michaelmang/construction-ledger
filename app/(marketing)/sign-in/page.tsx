@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { inputClass, primaryButtonClass } from "@/components/form";
+import { FormError } from "@/components/ui/FormError";
 import { requestMagicLink } from "./actions";
 
 // Also configured as auth.ts's pages.verifyRequest and pages.error, so
@@ -42,9 +43,9 @@ export default async function SignInPage({
           <>
             <h1 className="mt-6 text-lg font-medium text-text">Sign in</h1>
             {error && (
-              <p className="mt-2 rounded-md border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">
-                {errorMessage(error)}
-              </p>
+              <div className="mt-2">
+                <FormError error={errorMessage(error)} />
+              </div>
             )}
             <form action={requestMagicLink} className="mt-6 space-y-3 text-left">
               <input type="hidden" name="callbackUrl" value={callbackUrl ?? "/dashboard"} />

@@ -4,6 +4,9 @@ import { listCashAccounts } from "@/lib/queries";
 import { Money } from "@/components/Money";
 import { ReleaseRetainageForm } from "./ReleaseRetainageForm";
 
+// Fans out two hledger balance calls per active/complete job.
+export const maxDuration = 30;
+
 export default async function RetainageReportPage() {
   const [reports, cashAccountsRaw] = await Promise.all([
     getRetainageAgingForActiveJobs(new Date(), ["active", "complete"]),

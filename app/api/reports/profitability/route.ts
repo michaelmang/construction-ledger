@@ -1,6 +1,9 @@
 import { getProfitabilityForActiveJobs } from "@/lib/reports";
 import { toCsv } from "@/lib/csv";
 
+// Fans out one hledger call per active/complete job.
+export const maxDuration = 30;
+
 export async function GET() {
   const rows = await getProfitabilityForActiveJobs(["active", "complete"]);
 

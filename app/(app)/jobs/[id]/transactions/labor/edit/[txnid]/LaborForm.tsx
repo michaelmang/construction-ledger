@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { editLaborCost } from "@/app/actions/labor";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { FormError } from "@/components/ui/FormError";
 import { laborAmounts, burdenDeltaPct } from "@/lib/labor";
 import { formatUSD } from "@/lib/money";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
@@ -91,11 +92,7 @@ export function LaborForm({
 
   return (
     <form onSubmit={handleSubmit} className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6">
-      {error && (
-        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
-          {error}
-        </div>
-      )}
+      <FormError error={error} />
       <Field label="Cost Code">
         <select
           className={inputClass}

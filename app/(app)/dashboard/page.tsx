@@ -25,6 +25,11 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCardSkeleton, ChartSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { tableWrapClass, tableClass, theadClass, thClass, tbodyClass, trClass, tdClass, tdNumericClass } from "@/components/table";
 
+// Fans out ~8 independent hledger-backed queries (see comment below) — the
+// platform default is too tight for a cold container on a slow journal
+// fetch.
+export const maxDuration = 30;
+
 const RETAINAGE_OVERDUE_DAYS = 60;
 const AR_OVERDUE_DAYS = 30;
 

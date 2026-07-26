@@ -565,25 +565,24 @@ export interface OverBudgetAlert {
 // spec §F15).
 export async function getOverBudgetAlerts(): Promise<OverBudgetAlert[]> {
   const jobs = await prisma.job.findMany({ where: { status: "active" } });
-  const alerts: OverBudgetAlert[] = [];
 
-  for (const job of jobs) {
-    const rows = await getCostCodeBreakdown(job.id);
-    for (const row of rows) {
-      if (row.remaining.isNegative() && !row.estimatedAtCompletion.isZero()) {
-        alerts.push({
+  const perJob = await Promise.all(
+    jobs.map(async (job) => {
+      const rows = await getCostCodeBreakdown(job.id);
+      return rows
+        .filter((row) => row.remaining.isNegative() && !row.estimatedAtCompletion.isZero())
+        .map((row) => ({
           jobId: job.id,
           jobCode: job.code,
           jobName: job.name,
           costCode: row.costCode,
           costCodeName: row.costCodeName,
           utilizationPct: row.actual.dividedBy(row.estimatedAtCompletion).times(100),
-        });
-      }
-    }
-  }
+        }));
+    }),
+  );
 
-  return alerts;
+  return perJob.flat();
 }
 
 export interface DashboardSummary {

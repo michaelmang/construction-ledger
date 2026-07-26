@@ -7,6 +7,12 @@ const TONE_CLASSES: Record<PillTone, string> = {
   neutral: "bg-surface-2 text-text-2",
 };
 
+// Exposed so non-Pill elements (e.g. JobStatusMenu's <select>) can reuse the
+// same tone→color mapping instead of duplicating it locally.
+export function pillToneClasses(tone: PillTone): string {
+  return TONE_CLASSES[tone];
+}
+
 // Never color-only (v2 spec §4 accessibility note) — always render the
 // status word, the tint is reinforcement not the only signal.
 export function Pill({ tone = "neutral", children }: { tone?: PillTone; children: React.ReactNode }) {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { recordOverheadExpense, editOverheadExpense } from "@/app/actions/overhead";
 import { createVendor } from "@/app/actions/vendors";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { FormError } from "@/components/ui/FormError";
 import { VendorPicker, VendorOption } from "@/components/VendorPicker";
 
 interface CategoryOption {
@@ -99,11 +100,7 @@ export function OverheadExpenseForm({
 
   return (
     <form onSubmit={handleSubmit} className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6">
-      {error && (
-        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
-          {error}
-        </div>
-      )}
+      <FormError error={error} />
       <Field label="Vendor">
         <VendorPicker
           vendors={vendors}

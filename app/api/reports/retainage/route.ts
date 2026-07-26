@@ -1,6 +1,9 @@
 import { getRetainageAgingForActiveJobs } from "@/lib/reports";
 import { toCsv } from "@/lib/csv";
 
+// Fans out two hledger balance calls per active/complete job.
+export const maxDuration = 30;
+
 export async function GET() {
   const reports = await getRetainageAgingForActiveJobs(new Date(), ["active", "complete"]);
   const rows = reports.flatMap((r) =>

@@ -2,6 +2,9 @@ import Link from "next/link";
 import { getProfitabilityForActiveJobs } from "@/lib/reports";
 import { Money } from "@/components/Money";
 
+// Fans out one hledger call per active/complete job.
+export const maxDuration = 30;
+
 export default async function ProfitabilityReportPage() {
   const rows = await getProfitabilityForActiveJobs(["active", "complete"]);
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { editBillPayment } from "@/app/actions/bills";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { FormError } from "@/components/ui/FormError";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
 
 interface CashAccountOption {
@@ -54,11 +55,7 @@ export function BillPaymentForm({
 
   return (
     <form onSubmit={handleSubmit} className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6">
-      {error && (
-        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
-          {error}
-        </div>
-      )}
+      <FormError error={error} />
       <p className="text-sm text-text-2">Payment to {vendorName}</p>
       <Field label="Amount">
         <input

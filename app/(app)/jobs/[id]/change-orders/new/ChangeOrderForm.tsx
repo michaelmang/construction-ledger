@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createChangeOrder } from "@/app/actions/change-orders";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { FormError } from "@/components/ui/FormError";
 
 export function ChangeOrderForm({ jobId }: { jobId: number }) {
   const router = useRouter();
@@ -38,11 +39,7 @@ export function ChangeOrderForm({ jobId }: { jobId: number }) {
       onSubmit={handleSubmit}
       className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6"
     >
-      {error && (
-        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
-          {error}
-        </div>
-      )}
+      <FormError error={error} />
       <Field label="CO Number" hint="optional">
         <input className={inputClass} value={coNumber} onChange={(e) => setCoNumber(e.target.value)} />
       </Field>
