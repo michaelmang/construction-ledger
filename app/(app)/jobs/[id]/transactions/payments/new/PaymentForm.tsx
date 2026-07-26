@@ -6,6 +6,7 @@ import { recordPayment, editPayment } from "@/app/actions/payments";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 import { FormError } from "@/components/ui/FormError";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
+import { todayIso } from "@/lib/date-utc";
 
 interface CashAccountOption {
   name: string;
@@ -40,7 +41,7 @@ export function PaymentForm({
 }) {
   const router = useRouter();
   const [amount, setAmount] = useState(initial?.amount ?? "");
-  const [date, setDate] = useState(initial?.date ?? (() => new Date().toISOString().slice(0, 10))());
+  const [date, setDate] = useState(initial?.date ?? todayIso());
   const [memo, setMemo] = useState(initial?.memo ?? "");
   const [billingId, setBillingId] = useState<number | "">("");
   const [cashAccount, setCashAccount] = useState(

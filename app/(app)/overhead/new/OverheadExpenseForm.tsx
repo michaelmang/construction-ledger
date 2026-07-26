@@ -7,6 +7,7 @@ import { createVendor } from "@/app/actions/vendors";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 import { FormError } from "@/components/ui/FormError";
 import { VendorPicker, VendorOption } from "@/components/VendorPicker";
+import { todayIso } from "@/lib/date-utc";
 
 interface CategoryOption {
   id: number;
@@ -37,7 +38,7 @@ export function OverheadExpenseForm({
   const [newVendorName, setNewVendorName] = useState("");
   const [categoryId, setCategoryId] = useState<number | "">(initial?.overheadCategoryId ?? "");
   const [amount, setAmount] = useState(initial?.amount ?? "");
-  const [date, setDate] = useState(initial?.date ?? (() => new Date().toISOString().slice(0, 10))());
+  const [date, setDate] = useState(initial?.date ?? todayIso());
   const [description, setDescription] = useState(initial?.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

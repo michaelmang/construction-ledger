@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { releaseRetainagePayable, releaseRetainageReceivable } from "@/app/actions/retainage";
 import { inputClass, primaryButtonClass, secondaryButtonClass, Field } from "@/components/form";
 import { formatUSD } from "@/lib/money";
+import { todayIso } from "@/lib/date-utc";
 
 interface CashAccountOption {
   name: string;
@@ -26,7 +27,7 @@ export function ReleaseRetainageForm({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(balance);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayIso());
   const [cashAccount, setCashAccount] = useState(
     () => cashAccounts.find((a) => a.isDefault)?.name ?? cashAccounts[0]?.name ?? "checking",
   );

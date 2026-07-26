@@ -9,6 +9,7 @@ import { formatUSD } from "@/lib/money";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 import { FormError } from "@/components/ui/FormError";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
+import { todayIso } from "@/lib/date-utc";
 
 export interface BillingInitial {
   id: number;
@@ -32,9 +33,7 @@ export function BillingForm({
   const router = useRouter();
   const [amountBilled, setAmountBilled] = useState(initial?.amountBilled ?? "");
   const [retainageOverride, setRetainageOverride] = useState(initial?.retainageWithheld ?? "");
-  const [billingDate, setBillingDate] = useState(
-    initial?.billingDate ?? (() => new Date().toISOString().slice(0, 10))(),
-  );
+  const [billingDate, setBillingDate] = useState(initial?.billingDate ?? todayIso());
   const [periodLabel, setPeriodLabel] = useState(initial?.periodLabel ?? "");
   const [pctCompleteEstimate, setPctCompleteEstimate] = useState(initial?.pctCompleteEstimate ?? "");
   const [error, setError] = useState<string | null>(null);

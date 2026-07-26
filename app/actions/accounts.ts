@@ -14,6 +14,7 @@ import { cash, equityOpeningBalances } from "@/lib/accounts";
 import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
 import { requireWriteRole } from "@/lib/authz";
+import { todayIso } from "@/lib/date-utc";
 
 export async function createCashAccount(
   input: CreateCashAccountInput,
@@ -50,7 +51,7 @@ export async function createCashAccount(
         {
           kind: "opening-balance",
           jobId: null,
-          date: data.openingDate ?? new Date().toISOString().slice(0, 10),
+          date: data.openingDate ?? todayIso(),
           description: `Opening balance - ${data.label}`,
           tags: { type: "opening-balance" },
           postings: [
@@ -94,7 +95,7 @@ export async function editOpeningBalance(
     if (!account) return fail(`Account ${data.cashAccountId} not found`);
 
     const newBalance = new Decimal(data.openingBalance);
-    const date = data.openingDate ?? new Date().toISOString().slice(0, 10);
+    const date = data.openingDate ?? todayIso();
     let txnid: string | null = account.openingBalanceTxnid;
 
     if (account.openingBalanceTxnid) {

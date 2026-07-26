@@ -12,6 +12,7 @@ import { COST_TYPES, COST_TYPE_LABEL, CostType } from "@/lib/cost-types";
 import { laborAmounts, burdenDeltaPct } from "@/lib/labor";
 import { formatUSD } from "@/lib/money";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
+import { todayIso } from "@/lib/date-utc";
 
 interface CostCodeOption {
   id: number;
@@ -73,7 +74,7 @@ export function ExpenseForm({
   const [retainageWithheld, setRetainageWithheld] = useState(
     initial && Number(initial.retainageWithheld) > 0 ? initial.retainageWithheld : "",
   );
-  const [date, setDate] = useState(initial?.date ?? (() => new Date().toISOString().slice(0, 10))());
+  const [date, setDate] = useState(initial?.date ?? todayIso());
   const [description, setDescription] = useState(initial?.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
