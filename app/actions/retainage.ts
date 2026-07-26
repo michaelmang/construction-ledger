@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
 import { ActionResult, ok, fail } from "@/lib/action-result";
-import { releaseRetainageSchema, ReleaseRetainageInput } from "@/lib/validation";
+import { releaseRetainageSchema, txnidSchema, ReleaseRetainageInput } from "@/lib/validation";
 import { cash, retainagePayable, retainageReceivable } from "@/lib/accounts";
-import { recordTransaction } from "@/lib/transactions";
+import { recordTransaction, removeTransaction } from "@/lib/transactions";
 import { getRetainageAging } from "@/lib/reports";
 import { formatUSD } from "@/lib/money";
 import { requireWriteRole } from "@/lib/authz";
@@ -125,6 +125,32 @@ export async function releaseRetainagePayable(
     return ok({ txnid });
   } catch (err) {
     if (err instanceof ActionError) return fail(err.message);
+    return fail(err instanceof Error ? err.message : "Unexpected error");
+  }
+}
+
+// A retainage release has no Prisma side-table of its own (unlike bill
+// payments/billings) — the journal entry and JournalTxn index row are the
+// only state, so undoing one is a plain removeTransaction. Exists both as
+// a standalone correction tool and as the mechanism app/actions/revert.ts
+// uses to revert a still-live retainage-release commit.
+export async function deleteRetainageRelease(txnid: string): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
+  const parsed = txnidSchema.safeParse(txnid);
+  if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
+
+  try {
+    const existing = await prisma.journalTxn.findUnique({ where: { txnid } });
+    if (!existing) return fail(`No transaction found with txnid ${txnid}`);
+
+    await removeTransaction(txnid, `delete retainage release: ${existing.memo ?? txnid}`);
+
+    revalidatePath("/reports/retainage");
+    if (existing.jobId) revalidatePath(`/jobs/${existing.jobId}`);
+    return ok({ txnid });
+  } catch (err) {
     return fail(err instanceof Error ? err.message : "Unexpected error");
   }
 }

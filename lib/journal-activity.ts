@@ -20,7 +20,12 @@ export interface ActivityEntry {
   jobCode: string | null;
   jobName: string | null;
   memo: string | null;
+  // True only for a still-live create commit (see app/actions/revert.ts for
+  // why edits/deletes can't be safely reverted with what's tracked today).
+  revertible: boolean;
 }
+
+const NOT_REVERTIBLE_PREFIXES = ["edit ", "delete "];
 
 // Reads the journal data repo's git history and, where a commit carries a
 // `txnid:` trailer (v2 spec §F13 — written by lib/transactions.ts since the
@@ -66,6 +71,7 @@ export async function listJournalActivity(limit = 200): Promise<ActivityEntry[]>
   return parsed.map((p) => {
     const jt = p.txnid ? byTxnid.get(p.txnid) : undefined;
     const job = jt?.jobId ? jobById.get(jt.jobId) : undefined;
+    const lowerSubject = p.subject.toLowerCase();
     return {
       hash: p.hash,
       date: p.date,
@@ -77,6 +83,7 @@ export async function listJournalActivity(limit = 200): Promise<ActivityEntry[]>
       jobCode: job?.code ?? null,
       jobName: job?.name ?? null,
       memo: jt?.memo ?? null,
+      revertible: jt !== undefined && !NOT_REVERTIBLE_PREFIXES.some((prefix) => lowerSubject.startsWith(prefix)),
     };
   });
 }
