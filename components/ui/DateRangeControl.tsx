@@ -11,7 +11,7 @@ const chipClass = (active: boolean) =>
   }`;
 
 const dateInputClass =
-  "rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-text focus:border-accent focus:outline-none";
+  "w-full min-w-0 rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-text focus:border-accent focus:outline-none";
 
 // Preset chips (`?range=...`) as plain GET links, plus a custom from/to GET
 // form — mirrors app/jobs/[id]/transactions/page.tsx's established filter
@@ -27,8 +27,8 @@ export function DateRangeControl({ basePath, resolved }: { basePath: string; res
           </Link>
         ))}
       </div>
-      <form className="flex items-end gap-2" action={basePath}>
-        <div>
+      <form className="flex flex-wrap items-end gap-2" action={basePath}>
+        <div className="w-[calc(50%-0.5rem)] sm:w-auto">
           <label className="block text-xs text-text-3">From</label>
           <input
             type="date"
@@ -37,7 +37,7 @@ export function DateRangeControl({ basePath, resolved }: { basePath: string; res
             className={dateInputClass}
           />
         </div>
-        <div>
+        <div className="w-[calc(50%-0.5rem)] sm:w-auto">
           <label className="block text-xs text-text-3">To</label>
           <input
             type="date"

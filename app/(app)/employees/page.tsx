@@ -27,7 +27,7 @@ export default async function EmployeesPage() {
       {employees.length === 0 ? (
         <p className="text-text-3">No employees yet.</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="bg-surface-2 text-left text-text-3">
               <tr>

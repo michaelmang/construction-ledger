@@ -21,7 +21,7 @@ export default async function JobLayout({
 
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Job</div>
           <h1 className="mt-1 text-2xl font-semibold text-text">{job.name}</h1>
@@ -30,7 +30,7 @@ export default async function JobLayout({
             {job.clientName ? ` — ${job.clientName}` : ""}
           </p>
         </div>
-        <div className="flex items-start gap-8">
+        <div className="flex flex-wrap items-start gap-6 sm:gap-8">
           <div className="text-right">
             <div className="text-[11px] font-medium uppercase tracking-widest text-text-3">
               Contract Value

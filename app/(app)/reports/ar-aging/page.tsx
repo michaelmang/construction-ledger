@@ -32,7 +32,7 @@ export default async function ArAgingReportPage() {
       {rows.length === 0 ? (
         <p className="text-text-3">Nothing outstanding.</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="bg-surface-2 text-left text-text-3">
               <tr>
