@@ -169,6 +169,18 @@ model AllowedUser {
   createdAt DateTime @default(now())
 }
 
+// Singleton (always id=1) — the result of the last `hledger check` run
+// (V4 spec Phase 2: "check() was dead code"). Checked daily by
+// /api/cron/verify-ledger and surfaced on the dashboard, so a corrupted or
+// unbalanced journal is a visible "needs attention" state instead of a
+// silent one.
+model LedgerHealth {
+  id            Int      @id @default(1)
+  lastCheckedAt DateTime
+  ok            Boolean
+  error         String?
+}
+
 // Tracks every domain transaction (expense, payment, billing) that maps to a
 // journal entry, keyed by the txnid tag written into the journal file. Enables
 // idempotent edit/delete: look up the entry by txnid, not by re-parsing intent.

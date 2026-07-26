@@ -16,7 +16,10 @@ const links = [
   { href: "/accounts", label: "Accounts" },
 ];
 
-const ADMIN_ONLY_LINKS = [{ href: "/users", label: "Users" }];
+const ADMIN_ONLY_LINKS = [
+  { href: "/users", label: "Users" },
+  { href: "/ledger-doctor", label: "Ledger Doctor" },
+];
 
 export interface SidebarUser {
   email: string;

@@ -106,14 +106,15 @@ invocation failures.
 
 - `AUTH_SECRET` — generate with `openssl rand -base64 32`. Never reuse the
   value from local `.env`; generate a separate one for production.
-- `AUTH_RESEND_KEY` — a [Resend](https://resend.com) API key. Magic-link
+- `RESEND_API_KEY` — a [Resend](https://resend.com) API key. Magic-link
   emails go out through Resend's API, not SMTP.
 - `AUTH_EMAIL_FROM` — the sender address, e.g. `login@yourdomain.com`.
-  Must be on a domain verified with Resend (or use Resend's shared
-  `onboarding@resend.dev` for early testing — rate-limited, not for real
-  use).
+  Must be on a domain verified with Resend. Optional: defaults to Resend's
+  shared `onboarding@resend.dev` sender, which works with no domain setup
+  but Resend restricts its deliverability to the account owner's own
+  verified address — fine for the very first test, not for real testers.
 
-Without `AUTH_RESEND_KEY`/`AUTH_EMAIL_FROM` set correctly, sign-in for an
+Without `RESEND_API_KEY`/`AUTH_EMAIL_FROM` set correctly, sign-in for an
 already-allowlisted email fails with `?error=Configuration` on `/sign-in`
 — the allowlist check itself still runs first and correctly rejects
 non-invited emails either way, since that check happens before Resend is

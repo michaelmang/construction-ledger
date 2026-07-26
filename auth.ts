@@ -54,8 +54,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   providers: [
     Resend({
-      apiKey: process.env.AUTH_RESEND_KEY,
-      from: process.env.AUTH_EMAIL_FROM,
+      apiKey: process.env.RESEND_API_KEY,
+      // Resend's own shared test sender — works without a verified domain,
+      // but Resend's sandbox restricts delivery to the account owner's own
+      // verified address until a real domain is verified. Fine for initial
+      // testing; set AUTH_EMAIL_FROM once a domain is verified.
+      from: process.env.AUTH_EMAIL_FROM || "onboarding@resend.dev",
     }),
   ],
   pages: {
