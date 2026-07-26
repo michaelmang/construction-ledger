@@ -139,3 +139,36 @@ have (deleting their `User` row cascades to `Account`/`Session`) — not
 just blocking their next sign-in attempt. Can't be used on your own
 account or the last remaining admin (both are blocked in
 `app/actions/users.ts` on purpose).
+
+## Playwright smoke suite: local `next start` runs can be flaky
+
+**What it is**: `npm run e2e` (or `npx playwright test`) builds a real
+prod bundle and runs it via `next start` against the local `prisma dev`
+database — matching what `.github/workflows/ci.yml` does, except CI uses
+a real `postgres:16` service container instead of `prisma dev`.
+
+**Known local-only flakiness**: running the suite repeatedly against
+`next start` + local `prisma dev` on one machine over an extended session
+can surface intermittent `PrismaClientKnownRequestError: Server has
+closed the connection` / `driverAdapterError: ConnectionClosed` errors,
+which cascade into Auth.js session lookups failing and pages 500ing.
+Confirmed via direct investigation (this app's own server logs, plus
+`curl`/manual Playwright reproduction) that this is `prisma dev`'s local
+Postgres proxy proactively closing idle connections out from under the
+app's connection pool — not a bug in the specs, `lib/db.ts`, or the auth
+flow. The suite passes cleanly and repeatedly against `next dev` mode and
+against a real Postgres instance; `vitest.config.ts`'s
+`fileParallelism: false` comment documents the same underlying class of
+local-sandbox connection-budget flakiness for the vitest suite.
+
+**What to do about it**: nothing, day to day — this doesn't reproduce in
+CI (fresh `postgres:16` container per run, no `prisma dev` involved) or
+in production (Neon). If a local `npm run e2e` run flakes, just re-run
+it; restarting the local `prisma dev` instance
+(`npx prisma dev stop construction-ledger && npx prisma dev start
+construction-ledger` — **use `start`/`stop` with the existing instance
+name, not a bare `npx prisma dev`, which creates a new unnamed `default`
+instance on a different port and leaves your seeded data behind on the
+old one**) can also help for a few runs. Don't spend time trying to
+"fix" this in app code — it's a characteristic of the local dev database,
+not the app.
