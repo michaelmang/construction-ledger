@@ -123,6 +123,14 @@ export const editOpeningBalanceSchema = z.object({
 });
 export type EditOpeningBalanceInput = z.infer<typeof editOpeningBalanceSchema>;
 
+export const releaseRetainageSchema = z.object({
+  jobId: z.number().int().positive(),
+  amount: positiveDecimalAmount,
+  date: isoDate,
+  cashAccount: z.string().min(1).optional(),
+});
+export type ReleaseRetainageInput = z.infer<typeof releaseRetainageSchema>;
+
 export const payBillSchema = z.object({
   billId: z.number().int().positive(),
   amount: positiveDecimalAmount,

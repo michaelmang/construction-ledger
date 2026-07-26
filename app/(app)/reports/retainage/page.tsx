@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { getRetainageAgingForActiveJobs } from "@/lib/reports";
+import { listCashAccounts } from "@/lib/queries";
 import { Money } from "@/components/Money";
+import { ReleaseRetainageForm } from "./ReleaseRetainageForm";
 
 export default async function RetainageReportPage() {
-  const reports = await getRetainageAgingForActiveJobs(new Date(), ["active", "complete"]);
+  const [reports, cashAccountsRaw] = await Promise.all([
+    getRetainageAgingForActiveJobs(new Date(), ["active", "complete"]),
+    listCashAccounts(),
+  ]);
+  const cashAccounts = cashAccountsRaw.map((a) => ({ name: a.name, label: a.label, isDefault: a.isDefault }));
   const rows = reports.flatMap((r) =>
     r.billings.map((b) => ({
       jobId: r.jobId,
@@ -33,16 +39,28 @@ export default async function RetainageReportPage() {
             </Link>
             <div className="text-xs text-text-3">{r.jobCode}</div>
             <dl className="mt-2 space-y-1 text-sm">
-              <div className="flex justify-between">
+              <div className="flex items-center justify-between">
                 <dt className="text-text-3">Retainage Payable</dt>
-                <dd>
+                <dd className="flex items-center gap-2">
                   <Money value={r.retainagePayableBalance} />
+                  <ReleaseRetainageForm
+                    jobId={r.jobId}
+                    direction="payable"
+                    balance={r.retainagePayableBalance.toFixed(2)}
+                    cashAccounts={cashAccounts}
+                  />
                 </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex items-center justify-between">
                 <dt className="text-text-3">Retainage Receivable</dt>
-                <dd>
+                <dd className="flex items-center gap-2">
                   <Money value={r.retainageReceivableBalance} />
+                  <ReleaseRetainageForm
+                    jobId={r.jobId}
+                    direction="receivable"
+                    balance={r.retainageReceivableBalance.toFixed(2)}
+                    cashAccounts={cashAccounts}
+                  />
                 </dd>
               </div>
             </dl>

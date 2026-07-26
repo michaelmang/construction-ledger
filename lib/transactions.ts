@@ -12,7 +12,8 @@ export type TransactionKind =
   | "progress-billing"
   | "bill-payment"
   | "overhead-expense"
-  | "opening-balance";
+  | "opening-balance"
+  | "retainage-release";
 
 export interface TransactionEntry {
   kind: TransactionKind;
