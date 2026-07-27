@@ -33,6 +33,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx prisma generate
       - run: npx tsc --noEmit
       - run: npx eslint .
       - run: npx prisma migrate deploy
@@ -73,6 +74,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx prisma generate
       - run: npx playwright install --with-deps chromium
       - run: npx prisma migrate deploy
       - run: npm run seed:demo
