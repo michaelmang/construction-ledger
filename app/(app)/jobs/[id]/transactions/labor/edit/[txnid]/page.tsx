@@ -1,5 +1,11 @@
 import { notFound } from "next/navigation";
-import { getLaborEntry, listCostCodes, listActiveEmployees } from "@/lib/queries";
+import {
+  getLaborEntry,
+  listCostCodes,
+  listActiveEmployees,
+  toEmployeeOption,
+  getCompanyAssumptions,
+} from "@/lib/queries";
 import { LaborForm } from "./LaborForm";
 
 export default async function EditLaborPage({
@@ -11,15 +17,12 @@ export default async function EditLaborPage({
   const laborEntry = await getLaborEntry(txnid);
   if (!laborEntry) notFound();
 
-  const [costCodes, employeesRaw] = await Promise.all([listCostCodes(), listActiveEmployees()]);
-  const employees = employeesRaw.map((e) => ({
-    id: e.id,
-    name: e.name,
-    baseRate: e.baseRate.toString(),
-    payrollTaxPct: e.payrollTaxPct.toString(),
-    workersCompPct: e.workersCompPct.toString(),
-    benefitsPct: e.benefitsPct.toString(),
-  }));
+  const [costCodes, employeesRaw, company] = await Promise.all([
+    listCostCodes(),
+    listActiveEmployees(),
+    getCompanyAssumptions(),
+  ]);
+  const employees = employeesRaw.map(toEmployeeOption);
 
   return (
     <div className="space-y-6">
@@ -28,6 +31,7 @@ export default async function EditLaborPage({
         jobId={Number(id)}
         costCodes={costCodes}
         employees={employees}
+        company={company}
         initial={{
           txnid,
           jobId: laborEntry.jobId,

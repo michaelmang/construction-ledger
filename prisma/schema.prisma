@@ -265,21 +265,79 @@ model BillPayment {
   createdAt DateTime @default(now())
 }
 
-// v3 spec §F19: an employee's rate components. burdenedRate is not stored
-// here — it's computed (lib/labor.ts) at entry time and snapshotted onto the
-// LaborEntry row, so a later rate change doesn't rewrite the cost of past
-// work. Rates are decimal fractions of base rate (0.0765 = 7.65%), per the
-// convention documented in lib/labor.ts.
-model Employee {
-  id             Int      @id @default(autoincrement())
-  name           String   @unique
-  baseRate       Decimal
-  payrollTaxPct  Decimal  @default(0)
-  workersCompPct Decimal  @default(0)
-  benefitsPct    Decimal  @default(0)
-  active         Boolean  @default(true)
-  createdAt      DateTime @default(now())
+// Company-wide labor-burden assumptions (v5 spec: "job costing" feature).
+// Singleton (always id=1), same pattern as LedgerHealth. A real company's
+// sick/holiday/hours-per-year conventions and employer payroll tax rates
+// change rarely (a policy or tax-law update, not a per-employee thing) —
+// admin-editable via /settings/labor-burden, never hardcoded.
+model LaborBurdenSettings {
+  id                   Int      @id @default(1)
+  sickTimeAccrualPct   Decimal  @default(0.033) // 3.3%
+  companyHolidayDays   Int      @default(13)
+  avgHoursPerYear      Decimal  @default(2000)
+  ficaPct              Decimal  @default(0.0765) // employer FICA match (Medicare + SS)
+  futaPct              Decimal  @default(0.006) // Federal Unemployment
+  stateUnemploymentPct Decimal  @default(0.013)
+  updatedAt            DateTime @updatedAt
+}
 
+// Workers' comp classification rate table (v5 spec). A real company's WC
+// rates are revised yearly at insurance renewal — admin-editable list, not
+// hardcoded constants. Employee.wcCodeId is a live FK (not a copied rate)
+// so a renewal-time rate change automatically re-prices every employee's
+// *going-forward* burden; LaborEntry already snapshots the resolved dollar
+// amount at record time, so past entries stay protected regardless.
+model WorkersCompRate {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique // insurer-assigned WC class code, e.g. "5645"; "0" for EXEMPT
+  description String // e.g. "Carpentry", "EXEMPT"
+  rate        Decimal // decimal fraction, e.g. 0.041472 for 4.1472%
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  employees Employee[]
+}
+
+// PTO accrual tiers keyed by tenure-year threshold (v5 spec), e.g.
+// minTenureYears 0/1/2/5 -> 1%/2.2%/4.2%/6.2%. An employee's accrual rate
+// is the highest tier whose minTenureYears is <= their tenure ("5+ years"
+// applies from year 5 onward, or forever if no higher tier exists).
+model PtoAccrualTier {
+  id             Int     @id @default(autoincrement())
+  minTenureYears Int     @unique
+  accrualPct     Decimal
+}
+
+// v5 spec (job costing): burdenedRate is not stored here — it's computed
+// (lib/labor-burden.ts) at entry time from these fields + LaborBurdenSettings
+// + the employee's WorkersCompRate, and snapshotted onto the LaborEntry row,
+// so a later rate/assumption change never rewrites the cost of past work.
+// number/jobTitle/startDate/wcCodeId are nullable because existing employee
+// rows predate this feature and can't be backfilled with real data
+// automatically — real values get entered post-deploy via the admin-only
+// employee edit form. A null wcCodeId resolves to a 0% WC rate in
+// lib/labor-burden.ts (unclassified, not silently defaulted to some real
+// trade); a null startDate is treated as zero tenure by the same module's
+// caller.
+model Employee {
+  id                    Int      @id @default(autoincrement())
+  name                  String   @unique
+  number                String?  @unique // employee ID, free text (matches Job.code's slug precedent)
+  jobTitle              String? // free text, internal title ladder — not construction-cost-code related
+  payType               String   @default("hourly") // "salary" | "hourly"
+  employmentType        String   @default("full_time") // "full_time" | "part_time" | "seasonal" | "intern"
+  wcCodeId              Int?
+  startDate             DateTime?
+  holidayDays           Int? // per-employee override; null = inherit LaborBurdenSettings.companyHolidayDays
+  discretionaryPtoHours Decimal  @default(0)
+  currentPay            Decimal  @default(0) // $/yr if payType="salary", $/hr if payType="hourly"
+  healthInsMonthly      Decimal  @default(0)
+  retirementPct         Decimal  @default(0)
+  yearlyVehicleValue    Decimal  @default(0)
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now())
+
+  wcCode       WorkersCompRate? @relation(fields: [wcCodeId], references: [id])
   laborEntries LaborEntry[]
 }
 

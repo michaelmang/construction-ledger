@@ -14,14 +14,52 @@ vi.mock("@/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "test-user", email: "test@example.com", role: "admin" } })),
 }));
 
+import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
 import { createJob, createCostCode } from "@/app/actions/jobs";
 import { createVendor } from "@/app/actions/vendors";
-import { createEmployee } from "@/app/actions/employees";
+import { createEmployee, updateEmployee } from "@/app/actions/employees";
 import { recordExpense } from "@/app/actions/expenses";
 import { recordLaborCost, editLaborCost, deleteLaborCost } from "@/app/actions/labor";
 import { balance, print, check } from "@/lib/hledger";
-import { burdenedRate } from "@/lib/labor";
+import { computeLaborBurden } from "@/lib/labor-burden";
+import { getCompanyAssumptions } from "@/lib/queries";
+
+// v5 spec (job costing) replaced the flat-percent burden with
+// computeLaborBurden(employee, company, asOf) — these tests recompute the
+// expected burden through that same function (rather than hardcoding
+// numbers that depend on whatever LaborBurdenSettings/PtoAccrualTier rows
+// happen to be seeded) so they verify the *wiring* (the action posts what
+// computeLaborBurden says it should), while test/labor-burden.test.ts
+// verifies the formula itself against the source spreadsheet's fixtures.
+async function expectedBurden(employeeId: number, hours: string, asOf: string) {
+  const employee = await prisma.employee.findUniqueOrThrow({
+    where: { id: employeeId },
+    include: { wcCode: true },
+  });
+  const company = await getCompanyAssumptions();
+  const burden = computeLaborBurden(
+    {
+      payType: employee.payType as "salary" | "hourly",
+      startDate: employee.startDate ?? employee.createdAt,
+      holidayDays: employee.holidayDays,
+      discretionaryPtoHours: employee.discretionaryPtoHours,
+      currentPay: employee.currentPay,
+      healthInsMonthly: employee.healthInsMonthly,
+      retirementPct: employee.retirementPct,
+      yearlyVehicleValue: employee.yearlyVehicleValue,
+      wcRate: employee.wcCode?.rate ?? 0,
+    },
+    company,
+    new Date(asOf),
+  );
+  const hoursDecimal = new Decimal(hours);
+  return {
+    gross: burden.hourlyRate.times(hoursDecimal).toDecimalPlaces(2, Decimal.ROUND_HALF_UP),
+    burdened: burden.hourlyLaborBurden.times(hoursDecimal).toDecimalPlaces(2, Decimal.ROUND_HALF_UP),
+    rate: burden.hourlyLaborBurden,
+  };
+}
 
 describe("v3: cost type tag + burdened labor (spec §F17/§F18/§F19)", () => {
   let journalDir: string;
@@ -112,14 +150,14 @@ describe("v3: cost type tag + burdened labor (spec §F17/§F18/§F19)", () => {
     if (!costCode.ok) return;
     cleanupCostCodeIds.push(costCode.data.id);
 
-    // Same hand-computed fixture as lib/labor.ts tests: 33.33/hr, 7.65% +
-    // 9.5% + 11% burden, 7.75 hours -> burdenedRate 42.71, burdened 331.00.
     const employee = await createEmployee({
       name: `V3 Labor Employee ${Date.now()}`,
-      baseRate: "33.33",
-      payrollTaxPct: "0.0765",
-      workersCompPct: "0.095",
-      benefitsPct: "0.11",
+      payType: "hourly",
+      employmentType: "full_time",
+      startDate: "2020-01-01",
+      currentPay: "33.33",
+      healthInsMonthly: "50",
+      retirementPct: "0.03",
     });
     expect(employee.ok).toBe(true);
     if (!employee.ok) return;
@@ -136,22 +174,23 @@ describe("v3: cost type tag + burdened labor (spec §F17/§F18/§F19)", () => {
     if (!labor.ok) return;
     cleanupTxnids.push(labor.data.txnid);
 
+    const expected = await expectedBurden(employee.data.id, "7.75", "2026-07-24");
     const laborEntry = await prisma.laborEntry.findUnique({ where: { txnid: labor.data.txnid } });
-    expect(laborEntry!.grossAmount.toFixed(2)).toBe("258.31");
-    expect(laborEntry!.burdenedAmount.toFixed(2)).toBe("331.00");
-    expect(laborEntry!.burdenedRate.toFixed(2)).toBe("42.71");
+    expect(laborEntry!.grossAmount.toFixed(2)).toBe(expected.gross.toFixed(2));
+    expect(laborEntry!.burdenedAmount.toFixed(2)).toBe(expected.burdened.toFixed(2));
+    expect(laborEntry!.burdenedRate.toFixed(2)).toBe(expected.rate.toFixed(2));
 
     const [entry] = await print([`tag:txnid=${labor.data.txnid}`]);
     expect(entry.tags.costtype).toBe("labor");
     expect(entry.tags.job).toBe(jobCode);
 
     // The journal posts the burdened amount, not gross wages (spec §F18) —
-    // verify the actual hledger balance reflects 331.00, not 258.31/232.31.
+    // verify the actual hledger balance reflects the burdened total, not gross.
     const costBalance = await balance([`expenses:jobs:${jobCode}:${costCodeCode}`]);
-    expect(costBalance.total.toFixed(2)).toBe("331.00");
+    expect(costBalance.total.toFixed(2)).toBe(expected.burdened.toFixed(2));
 
     const payrollBalance = await balance(["liabilities:accrued payroll"]);
-    expect(payrollBalance.total.toFixed(2)).toBe("-331.00");
+    expect(payrollBalance.total.toFixed(2)).toBe(expected.burdened.negated().toFixed(2));
 
     expect(await check()).toBeNull();
 
@@ -166,18 +205,12 @@ describe("v3: cost type tag + burdened labor (spec §F17/§F18/§F19)", () => {
     });
     expect(edited.ok).toBe(true);
 
-    const rate = burdenedRate({
-      baseRate: "33.33",
-      payrollTaxPct: "0.0765",
-      workersCompPct: "0.095",
-      benefitsPct: "0.11",
-    });
-    const expectedBurdened = rate.times(10).toFixed(2);
+    const expectedAfterEdit = await expectedBurden(employee.data.id, "10", "2026-07-24");
     const editedEntry = await prisma.laborEntry.findUnique({ where: { txnid: labor.data.txnid } });
-    expect(editedEntry!.burdenedAmount.toFixed(2)).toBe(expectedBurdened);
+    expect(editedEntry!.burdenedAmount.toFixed(2)).toBe(expectedAfterEdit.burdened.toFixed(2));
 
     const costBalanceAfterEdit = await balance([`expenses:jobs:${jobCode}:${costCodeCode}`]);
-    expect(costBalanceAfterEdit.total.toFixed(2)).toBe(expectedBurdened);
+    expect(costBalanceAfterEdit.total.toFixed(2)).toBe(expectedAfterEdit.burdened.toFixed(2));
     expect(await check()).toBeNull();
 
     // Deleting removes both the journal entry and the LaborEntry row.
@@ -207,10 +240,9 @@ describe("v3: cost type tag + burdened labor (spec §F17/§F18/§F19)", () => {
     const employeeName = `V3 Snapshot Employee ${Date.now()}`;
     const employee = await createEmployee({
       name: employeeName,
-      baseRate: "20.00",
-      payrollTaxPct: "0",
-      workersCompPct: "0",
-      benefitsPct: "0",
+      payType: "hourly",
+      employmentType: "full_time",
+      currentPay: "20.00",
     });
     if (!employee.ok) return;
     cleanupEmployeeIds.push(employee.data.id);
@@ -226,21 +258,21 @@ describe("v3: cost type tag + burdened labor (spec §F17/§F18/§F19)", () => {
     cleanupTxnids.push(labor.data.txnid);
 
     const before = await prisma.laborEntry.findUnique({ where: { txnid: labor.data.txnid } });
-    expect(before!.burdenedAmount.toFixed(2)).toBe("100.00"); // 20 * 5, zero burden
 
-    const { updateEmployee } = await import("@/app/actions/employees");
     const updated = await updateEmployee({
       id: employee.data.id,
       name: employeeName,
-      baseRate: "50.00",
-      payrollTaxPct: "0",
-      workersCompPct: "0",
-      benefitsPct: "0",
+      payType: "hourly",
+      employmentType: "full_time",
+      currentPay: "50.00",
     });
     expect(updated.ok).toBe(true);
 
     const after = await prisma.laborEntry.findUnique({ where: { txnid: labor.data.txnid } });
-    expect(after!.burdenedAmount.toFixed(2)).toBe("100.00"); // unchanged despite rate bump
+    // Bumping currentPay from 20 -> 50 must not rewrite the already-posted
+    // entry — LaborEntry snapshots the burden at record time (v5 spec job
+    // costing carries this guarantee forward unchanged).
+    expect(after!.burdenedAmount.toFixed(2)).toBe(before!.burdenedAmount.toFixed(2));
   });
 });
 
@@ -312,15 +344,15 @@ describe("v3: cost type pivot reports + labor % of revenue (spec §F19, build in
 
     const employee = await createEmployee({
       name: `V3 Pivot Employee ${Date.now()}`,
-      baseRate: "20.00",
-      payrollTaxPct: "0",
-      workersCompPct: "0",
-      benefitsPct: "0",
+      payType: "hourly",
+      employmentType: "full_time",
+      currentPay: "20.00",
     });
     if (!employee.ok) return;
     cleanupEmployeeIds.push(employee.data.id);
 
-    // Labor: 10h @ 20/hr, zero burden -> 200.00 posted.
+    // Labor: 10h @ 20/hr, no workers' comp classification (0%) but the
+    // company's employer payroll tax still applies (v5 spec job costing).
     const labor = await recordLaborCost({
       jobId: job.data.id,
       costCodeId: laborCostCode.data.id,
@@ -330,6 +362,8 @@ describe("v3: cost type pivot reports + labor % of revenue (spec §F19, build in
     });
     expect(labor.ok).toBe(true);
     if (labor.ok) cleanupTxnids.push(labor.data.txnid);
+    const expectedLabor = await expectedBurden(employee.data.id, "10", "2026-07-25");
+    const expectedLaborAmount = expectedLabor.burdened;
 
     // Material expense: 300.00.
     const material = await recordExpense({
@@ -360,29 +394,29 @@ describe("v3: cost type pivot reports + labor % of revenue (spec §F19, build in
     const jobPivot = await getCostTypePivotForJob(job.data.id);
     const laborRow = jobPivot.find((r) => r.costCodeId === laborCostCode.data.id);
     const materialRow = jobPivot.find((r) => r.costCodeId === materialCostCode.data.id);
-    expect(laborRow!.labor.toFixed(2)).toBe("200.00");
-    expect(laborRow!.total.toFixed(2)).toBe("200.00");
+    expect(laborRow!.labor.toFixed(2)).toBe(expectedLaborAmount.toFixed(2));
+    expect(laborRow!.total.toFixed(2)).toBe(expectedLaborAmount.toFixed(2));
     expect(materialRow!.material.toFixed(2)).toBe("300.00");
     expect(materialRow!.total.toFixed(2)).toBe("300.00");
 
     // Cross-check against real hledger balance output directly.
     const laborBalance = await balance([`tag:job=${jobCode}`, "tag:costtype=labor", "type:x"]);
-    expect(laborBalance.total.toFixed(2)).toBe("200.00");
+    expect(laborBalance.total.toFixed(2)).toBe(expectedLaborAmount.toFixed(2));
     const materialBalance = await balance([`tag:job=${jobCode}`, "tag:costtype=material", "type:x"]);
     expect(materialBalance.total.toFixed(2)).toBe("300.00");
 
     // Company-wide by-job pivot: this job's row should match the per-job pivot.
     const byJobPivot = await getCostTypePivotByJob(["active"]);
     const jobRow = byJobPivot.find((r) => r.jobId === job.data.id);
-    expect(jobRow!.labor.toFixed(2)).toBe("200.00");
+    expect(jobRow!.labor.toFixed(2)).toBe(expectedLaborAmount.toFixed(2));
     expect(jobRow!.material.toFixed(2)).toBe("300.00");
-    expect(jobRow!.total.toFixed(2)).toBe("500.00");
+    expect(jobRow!.total.toFixed(2)).toBe(expectedLaborAmount.plus("300.00").toFixed(2));
 
-    // Labor % of revenue: 200.00 labor / 2000.00 revenue = 10%. This journal
-    // is isolated to this describe block (its own mkdtemp), so the ratio is
-    // exact, not diluted by other tests' entries.
+    // Labor % of revenue: labor / 2000.00 revenue. This journal is isolated
+    // to this describe block (its own mkdtemp), so the ratio is exact, not
+    // diluted by other tests' entries.
     const laborPct = await getLaborPercentOfRevenue();
-    expect(laborPct.toFixed(2)).toBe("10.00");
+    expect(laborPct.toFixed(2)).toBe(expectedLaborAmount.dividedBy(2000).times(100).toFixed(2));
 
     const incomeBalance = await balance(["type:R"]);
     expect(incomeBalance.total.abs().toFixed(2)).toBe("2000.00");
