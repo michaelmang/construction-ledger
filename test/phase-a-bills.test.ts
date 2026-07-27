@@ -7,14 +7,25 @@ import path from "node:path";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+// See test/action-edge-cases.test.ts for why this is mocked (revalidatePath's
+// reasoning applies identically to auth()).
+vi.mock("@/auth", () => ({
+  auth: vi.fn(async () => ({ user: { id: "test-user", email: "test@example.com", role: "admin" } })),
+}));
+
 import { prisma } from "@/lib/db";
 import { createJob } from "@/app/actions/jobs";
 import { createCostCode } from "@/app/actions/jobs";
 import { createVendor } from "@/app/actions/vendors";
 import { recordExpense } from "@/app/actions/expenses";
-import { payBill } from "@/app/actions/bills";
-import { createCashAccount } from "@/app/actions/accounts";
-import { createOverheadCategory, recordOverheadExpense } from "@/app/actions/overhead";
+import { payBill, editBillPayment, deleteBillPayment } from "@/app/actions/bills";
+import { createCashAccount, editOpeningBalance } from "@/app/actions/accounts";
+import {
+  createOverheadCategory,
+  recordOverheadExpense,
+  editOverheadExpense,
+  deleteOverheadExpense,
+} from "@/app/actions/overhead";
 import { getCashPositionSummary } from "@/lib/reports";
 import { check } from "@/lib/hledger";
 import { vendorAccountSlug } from "@/lib/accounts";
@@ -266,5 +277,185 @@ describe("Phase A: vendors, bills, pay-bill flow (v2 spec §F1/§F2/§F6/§F8/§
     expect(entry!.postings.some((p) => p.account.startsWith("expenses:overhead:"))).toBe(true);
 
     expect(await check()).toBeNull();
+  });
+
+  it("edits and deletes a bill payment, keeping AP and paidAmount in sync (V4 spec Phase 2)", async () => {
+    const job = await createJob({ code: `EBP-${Date.now()}`, name: "Edit Bill Payment Job" });
+    if (!job.ok) return;
+    cleanupJobIds.push(job.data.id);
+    const costCode = await createCostCode({ code: `EBP-CC-${Date.now()}`, name: "Test" });
+    if (!costCode.ok) return;
+    cleanupCostCodeIds.push(costCode.data.id);
+    const vendorName = `Edit Bill Payment Vendor ${Date.now()}`;
+    const vendor = await createVendor({ name: vendorName });
+    if (!vendor.ok) return;
+    cleanupVendorIds.push(vendor.data.id);
+
+    const expense = await recordExpense({
+      jobId: job.data.id,
+      costCodeId: costCode.data.id,
+      vendorId: vendor.data.id,
+      costType: "material",
+      amount: "5000.00",
+      date: "2026-07-24",
+    });
+    if (!expense.ok) return;
+    cleanupTxnids.push(expense.data.txnid);
+    const bill = await prisma.bill.findUnique({ where: { txnid: expense.data.txnid } });
+
+    const payment = await payBill({ billId: bill!.id, amount: "2000.00", date: "2026-07-25" });
+    expect(payment.ok).toBe(true);
+    if (!payment.ok) return;
+    cleanupTxnids.push(payment.data.txnid);
+
+    const edited = await editBillPayment({
+      txnid: payment.data.txnid,
+      billId: bill!.id,
+      amount: "3000.00",
+      date: "2026-07-26",
+    });
+    expect(edited.ok).toBe(true);
+
+    const afterEdit = await prisma.bill.findUnique({ where: { id: bill!.id } });
+    expect(afterEdit!.paidAmount.toString()).toBe("3000");
+    expect(afterEdit!.status).toBe("partial");
+    expect(await check()).toBeNull();
+
+    const vendorSlug = vendorAccountSlug(vendorName);
+    const { balance } = await import("@/lib/hledger");
+    const apAfterEdit = await balance([`liabilities:accounts payable:${vendorSlug}`]);
+    // 5000 owed - 3000 paid = 2000 still owed (liability credit balance is negative in this ledger's sign convention).
+    expect(apAfterEdit.total.toFixed(2)).toBe("-2000.00");
+
+    const deleted = await deleteBillPayment(payment.data.txnid);
+    expect(deleted.ok).toBe(true);
+
+    const afterDelete = await prisma.bill.findUnique({ where: { id: bill!.id } });
+    expect(afterDelete!.paidAmount.toString()).toBe("0");
+    expect(afterDelete!.status).toBe("open");
+    expect(await check()).toBeNull();
+  });
+
+  it("rejects editing a bill payment beyond the amount due", async () => {
+    const job = await createJob({ code: `EBPX-${Date.now()}`, name: "Edit Bill Payment Overpay" });
+    if (!job.ok) return;
+    cleanupJobIds.push(job.data.id);
+    const costCode = await createCostCode({ code: `EBPX-CC-${Date.now()}`, name: "Test" });
+    if (!costCode.ok) return;
+    cleanupCostCodeIds.push(costCode.data.id);
+    const vendor = await createVendor({ name: `Edit Bill Payment Overpay Vendor ${Date.now()}` });
+    if (!vendor.ok) return;
+    cleanupVendorIds.push(vendor.data.id);
+
+    const expense = await recordExpense({
+      jobId: job.data.id,
+      costCodeId: costCode.data.id,
+      vendorId: vendor.data.id,
+      costType: "material",
+      amount: "1000.00",
+      date: "2026-07-24",
+    });
+    if (!expense.ok) return;
+    cleanupTxnids.push(expense.data.txnid);
+    const bill = await prisma.bill.findUnique({ where: { txnid: expense.data.txnid } });
+
+    const payment = await payBill({ billId: bill!.id, amount: "500.00", date: "2026-07-25" });
+    if (!payment.ok) return;
+    cleanupTxnids.push(payment.data.txnid);
+
+    const edited = await editBillPayment({
+      txnid: payment.data.txnid,
+      billId: bill!.id,
+      amount: "1500.00",
+      date: "2026-07-25",
+    });
+    expect(edited.ok).toBe(false);
+    if (!edited.ok) expect(edited.error).toContain("exceeds the amount due");
+  });
+
+  it("edits and deletes an overhead expense (V4 spec Phase 2)", async () => {
+    const category = await createOverheadCategory({
+      code: `EOH-${Date.now()}`,
+      name: "Edit Overhead Category",
+    });
+    if (!category.ok) return;
+    cleanupOverheadCategoryIds.push(category.data.id);
+
+    const vendor = await createVendor({ name: `Edit Overhead Vendor ${Date.now()}` });
+    if (!vendor.ok) return;
+    cleanupVendorIds.push(vendor.data.id);
+
+    const recorded = await recordOverheadExpense({
+      vendorId: vendor.data.id,
+      overheadCategoryId: category.data.id,
+      amount: "450.00",
+      date: "2026-07-24",
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+    cleanupTxnids.push(recorded.data.txnid);
+
+    const edited = await editOverheadExpense({
+      txnid: recorded.data.txnid,
+      vendorId: vendor.data.id,
+      overheadCategoryId: category.data.id,
+      amount: "600.00",
+      date: "2026-07-25",
+      description: "revised amount",
+    });
+    expect(edited.ok).toBe(true);
+
+    const billAfterEdit = await prisma.bill.findUnique({ where: { txnid: recorded.data.txnid } });
+    expect(billAfterEdit!.amount.toString()).toBe("600");
+    expect(await check()).toBeNull();
+
+    const deleted = await deleteOverheadExpense(recorded.data.txnid);
+    expect(deleted.ok).toBe(true);
+
+    const billAfterDelete = await prisma.bill.findUnique({ where: { txnid: recorded.data.txnid } });
+    expect(billAfterDelete).toBeNull();
+    expect(await check()).toBeNull();
+  });
+
+  it("edits an opening balance in place and can zero it back out (V4 spec Phase 2)", async () => {
+    const accountName = `edit-savings-${Date.now()}`;
+    const account = await createCashAccount({
+      name: accountName,
+      label: "Edit Test Savings",
+      openingBalance: "10000.00",
+      openingDate: "2026-01-01",
+    });
+    expect(account.ok).toBe(true);
+    if (!account.ok) return;
+    cleanupCashAccountIds.push(account.data.id);
+    if (account.data.openingBalanceTxnid) cleanupTxnids.push(account.data.openingBalanceTxnid);
+
+    const { balance } = await import("@/lib/hledger");
+    const { cash } = await import("@/lib/accounts");
+
+    const edited = await editOpeningBalance({
+      cashAccountId: account.data.id,
+      openingBalance: "15000.00",
+      openingDate: "2026-01-02",
+    });
+    expect(edited.ok).toBe(true);
+
+    const savingsAfterEdit = await balance([cash(accountName)]);
+    expect(savingsAfterEdit.total.toFixed(2)).toBe("15000.00");
+    expect(await check()).toBeNull();
+
+    const zeroed = await editOpeningBalance({
+      cashAccountId: account.data.id,
+      openingBalance: "0",
+    });
+    expect(zeroed.ok).toBe(true);
+    expect(zeroed.ok && zeroed.data.txnid).toBeNull();
+
+    const savingsAfterZero = await balance([cash(accountName)]);
+    expect(savingsAfterZero.total.toFixed(2)).toBe("0.00");
+    expect(await check()).toBeNull();
+
+    const cashAccountAfterZero = await prisma.cashAccount.findUnique({ where: { id: account.data.id } });
+    expect(cashAccountAfterZero!.openingBalanceTxnid).toBeNull();
   });
 });

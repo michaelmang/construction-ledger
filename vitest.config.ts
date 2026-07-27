@@ -16,6 +16,9 @@ export default defineConfig(({ mode }) => ({
   test: {
     environment: "node",
     env: loadEnv(mode, process.cwd(), ""),
+    // e2e/*.spec.ts are Playwright specs (test.use, page fixtures) — vitest
+    // would otherwise try to run them too since the naming glob overlaps.
+    exclude: ["**/node_modules/**", "e2e/**"],
     // Test files hit a single shared local Postgres instance (real network
     // round trips, unlike the old per-process sqlite file), and each file
     // spins up its own Prisma connection pool — running files in parallel

@@ -4,6 +4,7 @@ import { formatUSD } from "@/lib/money";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Pill, PillTone } from "@/components/ui/Pill";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { RevertButton } from "./RevertButton";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ const KIND_LABEL: Record<string, string> = {
   "bill-payment": "Bill Payment",
   "overhead-expense": "Overhead Expense",
   "opening-balance": "Opening Balance",
+  "retainage-release": "Retainage Release",
 };
 
 const KIND_TONE: Record<string, PillTone> = {
@@ -25,6 +27,7 @@ const KIND_TONE: Record<string, PillTone> = {
   "bill-payment": "negative",
   "overhead-expense": "negative",
   "opening-balance": "neutral",
+  "retainage-release": "neutral",
 };
 
 function describe(entry: ActivityEntry): string {
@@ -94,6 +97,7 @@ export default async function ActivityPage() {
                     <div>Recorded: {entry.date.toISOString().replace("T", " ").slice(0, 19)}</div>
                     <div className="font-mono">commit {entry.hash.slice(0, 10)}</div>
                     <div className="text-text-3/70">{entry.subject}</div>
+                    {entry.revertible && <RevertButton hash={entry.hash} />}
                   </div>
                 </details>
               </li>

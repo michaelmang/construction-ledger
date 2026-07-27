@@ -13,6 +13,7 @@ const KIND_LABELS: Record<string, string> = {
   "bill-payment": "Bill Payment",
   "overhead-expense": "Overhead",
   "opening-balance": "Opening Balance",
+  "retainage-release": "Retainage Release",
 };
 
 const filterInputClass =

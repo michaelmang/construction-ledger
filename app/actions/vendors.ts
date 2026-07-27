@@ -3,11 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { ActionResult, ok, fail } from "@/lib/action-result";
+import { requireWriteRole } from "@/lib/authz";
 import { createVendorSchema, CreateVendorInput } from "@/lib/validation";
 
 export async function createVendor(
   input: CreateVendorInput,
 ): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = createVendorSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;

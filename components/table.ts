@@ -1,6 +1,10 @@
 // v2 spec §4.3 Table: surface card, uppercase micro-label header row,
 // hairline dividers, row hover, numeric columns right-aligned mono.
-export const tableWrapClass = "overflow-hidden rounded-xl border border-border bg-surface";
+// overflow-x-auto (V4 spec Phase 3: responsive shell) lets wide tables
+// scroll horizontally on narrow viewports instead of being clipped;
+// overflow-y-hidden keeps the original corner-clipping behavior so the
+// thead's flat background doesn't poke past the rounded-xl corners.
+export const tableWrapClass = "overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-surface";
 export const tableClass = "w-full text-sm";
 export const theadClass = "bg-surface-2 text-left";
 export const thClass =

@@ -20,6 +20,7 @@ import {
 import { JournalValidationError } from "@/lib/journal";
 import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
+import { requireWriteRole } from "@/lib/authz";
 
 class ActionError extends Error {}
 
@@ -97,6 +98,9 @@ async function assertBillEditable(txnid: string): Promise<void> {
 export async function recordExpense(
   input: RecordExpenseInput,
 ): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = recordExpenseSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -143,6 +147,9 @@ export async function recordExpense(
 export async function editExpense(
   input: EditExpenseInput,
 ): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = editExpenseSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -190,6 +197,9 @@ export async function editExpense(
 }
 
 export async function deleteExpense(txnid: string): Promise<ActionResult<{ txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = txnidSchema.safeParse(txnid);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
 

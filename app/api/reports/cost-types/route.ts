@@ -1,6 +1,9 @@
 import { getCostTypePivotByJob } from "@/lib/reports";
 import { toCsv } from "@/lib/csv";
 
+// Fans out one hledger balance call per cost type, plus one for untyped.
+export const maxDuration = 30;
+
 export async function GET() {
   const rows = await getCostTypePivotByJob(["active", "complete"]);
 

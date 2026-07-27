@@ -2,6 +2,9 @@ import Link from "next/link";
 import { getWipScheduleForActiveJobs } from "@/lib/reports";
 import { Money } from "@/components/Money";
 
+// Fans out one hledger call per active/complete job.
+export const maxDuration = 30;
+
 export default async function WipReportPage() {
   const rows = await getWipScheduleForActiveJobs(["active", "complete"]);
 

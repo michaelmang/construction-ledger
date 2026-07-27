@@ -122,23 +122,32 @@ export async function ensureJournalReady(): Promise<void> {
   }
 }
 
-// git add -A has no direct isomorphic-git equivalent; statusMatrix + add/
-// remove reimplements it. Comparing workdir directly to stage (ignoring
-// HEAD) is the standard pattern for "stage everything that's changed since
-// the last commit."
-async function stageAllChanges(dir: string): Promise<boolean> {
-  const matrix = await git.statusMatrix({ fs, dir });
-  let changed = false;
-  for (const [filepath, , workdirStatus, stageStatus] of matrix) {
-    if (workdirStatus === stageStatus) continue;
-    changed = true;
-    if (workdirStatus === 0) {
-      await git.remove({ fs, dir, filepath });
-    } else {
-      await git.add({ fs, dir, filepath });
-    }
+// git add -A has no direct isomorphic-git equivalent. The natural approach
+// — git.statusMatrix() to find what changed, then git.add()/git.remove()
+// on just those paths — has a confirmed bug for this app's write pattern:
+// statusMatrix trusts a stat-based (mtime/size) fast path to decide
+// "workdir status" instead of always rehashing content, and two writes of
+// same-length-but-different content (e.g. editing an entry so the dollar
+// amount's digit count doesn't change) can land close enough in time that
+// it reports the file as unmodified even though the bytes genuinely
+// differ. Reproduced directly: writing "hello" then "world" to the same
+// path, seconds apart, both git.add()+git.commit() calls issued
+// unconditionally — the resulting commit correctly captured "world" every
+// time, proving git.add()/git.commit() themselves always rehash real
+// content; only statusMatrix's pre-check is unreliable. So: don't ask
+// statusMatrix what changed. Just add() every file unconditionally — the
+// "did anything actually change" question is answered afterward in
+// commitJournalChanges by comparing tree oids, a real content comparison
+// instead of a stat shortcut.
+async function stageAllFiles(dir: string): Promise<void> {
+  const entries = await fs.promises.readdir(dir, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const absoluteDir = entry.parentPath ?? entry.path;
+    if (path.relative(dir, absoluteDir).split(path.sep).includes(".git")) continue;
+    const filepath = path.relative(dir, path.join(absoluteDir, entry.name)).split(path.sep).join("/");
+    await git.add({ fs, dir, filepath });
   }
-  return changed;
 }
 
 // Thrown when a push is rejected (another container pushed first — this
@@ -153,10 +162,26 @@ export class JournalPushRejectedError extends Error {}
 // aspirational.
 export async function commitJournalChanges(message: string): Promise<void> {
   const dir = journalDir();
-  const changed = await stageAllChanges(dir);
-  if (!changed) return; // nothing to commit (e.g. a no-op edit)
+  const parentOid = await currentJournalSha();
 
-  await git.commit({ fs, dir, message, author: authorIdentity() });
+  await stageAllFiles(dir);
+  const commitOid = await git.commit({ fs, dir, message, author: authorIdentity() });
+
+  if (parentOid) {
+    const [{ commit: parentCommit }, { commit: newCommit }] = await Promise.all([
+      git.readCommit({ fs, dir, oid: parentOid }),
+      git.readCommit({ fs, dir, oid: commitOid }),
+    ]);
+    if (parentCommit.tree === newCommit.tree) {
+      // True no-op (e.g. an edit submitted with byte-identical resulting
+      // content) — undo the pointless commit rather than leave a git
+      // history entry that changed nothing. git.commit() has no built-in
+      // "refuse an empty commit" the way the real git CLI does (confirmed
+      // directly), so this is done by hand: rewind the branch ref.
+      await git.writeRef({ fs, dir, ref: `refs/heads/${DEFAULT_BRANCH}`, value: parentOid, force: true });
+      return;
+    }
+  }
 
   const url = remoteUrl();
   if (!url) return; // local dev / tests — no remote, a local commit is enough
@@ -210,4 +235,19 @@ export async function forcePushSeededJournal(): Promise<void> {
     throw new Error(`Failed to push seeded journal history: ${result.error ?? "unknown error"}`);
   }
   lastSyncAt = Date.now();
+}
+
+// The journal's current commit — a natural, always-correct cache key for
+// hledger read results (lib/hledger.ts): identical sha means identical
+// file contents means identical `balance`/`register`/`print` output for
+// the same query, and the sha changes on every single write, so there's
+// no separate invalidation logic to keep in sync. Null on a fresh journal
+// with no commits yet (callers should treat that as "cache nothing").
+export async function currentJournalSha(): Promise<string | null> {
+  const dir = journalDir();
+  try {
+    return await git.resolveRef({ fs, dir, ref: "HEAD" });
+  } catch {
+    return null;
+  }
 }

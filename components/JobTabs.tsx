@@ -15,7 +15,10 @@ export function JobTabs({ jobId }: { jobId: number }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex gap-1 border-b border-border">
+    <nav className="flex gap-1 overflow-x-auto border-b border-border">
+      {/* overflow-x-auto (V4 spec Phase 3: responsive shell) — 5 tabs
+          don't fit a 390px viewport; this scrolls the tab row instead of
+          forcing the whole page wider. */}
       {tabs.map((tab) => {
         const href = `/jobs/${jobId}${tab.href}`;
         const isActive = tab.href === "" ? pathname === href : pathname.startsWith(href);

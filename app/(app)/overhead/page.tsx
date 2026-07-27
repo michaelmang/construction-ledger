@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listOverheadCategories, listOverheadBills } from "@/lib/queries";
 import { Money } from "@/components/Money";
 import { OverheadCategoryForm } from "./OverheadCategoryForm";
+import { OverheadBillActions } from "./OverheadBillActions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { primaryButtonClass } from "@/components/form";
 import { tableWrapClass, tableClass, theadClass, thClass, tbodyClass, trClass, tdClass, tdNumericClass } from "@/components/table";
@@ -53,6 +54,7 @@ export default async function OverheadPage() {
                 <th className={thClass}>Vendor</th>
                 <th className={thClass}>Category</th>
                 <th className={thClass}>Amount</th>
+                <th className={thClass}></th>
               </tr>
             </thead>
             <tbody className={tbodyClass}>
@@ -67,6 +69,9 @@ export default async function OverheadPage() {
                   <td className={tdClass}>{b.overheadCategory?.name ?? "—"}</td>
                   <td className={tdNumericClass}>
                     <Money value={b.amount} />
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <OverheadBillActions txnid={b.txnid} paid={b.paidAmount.greaterThan(0)} />
                   </td>
                 </tr>
               ))}

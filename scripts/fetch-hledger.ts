@@ -1,9 +1,10 @@
-// Vercel's serverless runtime has no pre-installed hledger binary. This
-// downloads the official prebuilt Linux binary at build time and vendors it
-// into bin/hledger/ so next.config.ts's outputFileTracingIncludes can ship
-// it with the deployed function. lib/hledger.ts picks this path over a bare
-// PATH lookup only when process.env.VERCEL is set — local dev keeps using
-// Homebrew's hledger unchanged.
+// Vercel's serverless runtime has no pre-installed hledger binary, and
+// neither does a GitHub Actions runner. This downloads the official
+// prebuilt Linux binary at build time and vendors it into bin/hledger/ so
+// next.config.ts's outputFileTracingIncludes can ship it with the deployed
+// function (Vercel) or so CI can just run it directly off disk. lib/hledger.ts
+// picks this path over a bare PATH lookup only when process.env.VERCEL or
+// process.env.CI is set — local dev keeps using Homebrew's hledger unchanged.
 //
 // Version is pinned deliberately, not "latest" — a version bump in a
 // trusted accounting engine should be a tested, reviewed action, never a
@@ -27,8 +28,8 @@ const BIN_DIR = path.join(process.cwd(), "bin", "hledger");
 const BIN_PATH = path.join(BIN_DIR, "hledger");
 
 async function main() {
-  if (!process.env.VERCEL) {
-    console.log("Not a Vercel build — skipping hledger binary fetch (using system hledger).");
+  if (!process.env.VERCEL && !process.env.CI) {
+    console.log("Not Vercel or CI — skipping hledger binary fetch (using system hledger).");
     return;
   }
 

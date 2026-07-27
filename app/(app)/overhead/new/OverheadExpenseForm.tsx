@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { recordOverheadExpense } from "@/app/actions/overhead";
+import { recordOverheadExpense, editOverheadExpense } from "@/app/actions/overhead";
 import { createVendor } from "@/app/actions/vendors";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { FormError } from "@/components/ui/FormError";
 import { VendorPicker, VendorOption } from "@/components/VendorPicker";
+import { todayIso } from "@/lib/date-utc";
 
 interface CategoryOption {
   id: number;
@@ -13,20 +15,31 @@ interface CategoryOption {
   name: string;
 }
 
+export interface OverheadExpenseInitial {
+  txnid: string;
+  vendorId: number;
+  overheadCategoryId: number;
+  amount: string;
+  date: string;
+  description: string;
+}
+
 export function OverheadExpenseForm({
   vendors,
   categories,
+  initial,
 }: {
   vendors: VendorOption[];
   categories: CategoryOption[];
+  initial?: OverheadExpenseInitial;
 }) {
   const router = useRouter();
-  const [vendorSelection, setVendorSelection] = useState<number | "new" | "">("");
+  const [vendorSelection, setVendorSelection] = useState<number | "new" | "">(initial?.vendorId ?? "");
   const [newVendorName, setNewVendorName] = useState("");
-  const [categoryId, setCategoryId] = useState<number | "">("");
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState<number | "">(initial?.overheadCategoryId ?? "");
+  const [amount, setAmount] = useState(initial?.amount ?? "");
+  const [date, setDate] = useState(initial?.date ?? todayIso());
+  const [description, setDescription] = useState(initial?.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -61,13 +74,22 @@ export function OverheadExpenseForm({
       vendorId = vendorSelection;
     }
 
-    const result = await recordOverheadExpense({
-      vendorId,
-      overheadCategoryId: categoryId,
-      amount,
-      date,
-      description: description || undefined,
-    });
+    const result = initial
+      ? await editOverheadExpense({
+          txnid: initial.txnid,
+          vendorId,
+          overheadCategoryId: categoryId,
+          amount,
+          date,
+          description: description || undefined,
+        })
+      : await recordOverheadExpense({
+          vendorId,
+          overheadCategoryId: categoryId,
+          amount,
+          date,
+          description: description || undefined,
+        });
     if (!result.ok) {
       setError(result.error);
       setSubmitting(false);
@@ -79,11 +101,7 @@ export function OverheadExpenseForm({
 
   return (
     <form onSubmit={handleSubmit} className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6">
-      {error && (
-        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
-          {error}
-        </div>
-      )}
+      <FormError error={error} />
       <Field label="Vendor">
         <VendorPicker
           vendors={vendors}
@@ -131,7 +149,7 @@ export function OverheadExpenseForm({
         <input className={inputClass} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
       <button type="submit" disabled={submitting} className={primaryButtonClass}>
-        {submitting ? "Recording…" : "Record Overhead Expense"}
+        {submitting ? "Saving…" : initial ? "Save Changes" : "Record Overhead Expense"}
       </button>
     </form>
   );

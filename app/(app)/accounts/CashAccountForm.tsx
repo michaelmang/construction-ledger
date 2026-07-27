@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createCashAccount } from "@/app/actions/accounts";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { todayIso } from "@/lib/date-utc";
 
 export function CashAccountForm() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [label, setLabel] = useState("");
   const [openingBalance, setOpeningBalance] = useState("");
-  const [openingDate, setOpeningDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [openingDate, setOpeningDate] = useState(todayIso());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 

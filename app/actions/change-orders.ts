@@ -5,6 +5,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { ActionResult, ok, fail } from "@/lib/action-result";
 import { createChangeOrderSchema, isoDate, CreateChangeOrderInput } from "@/lib/validation";
+import { requireWriteRole } from "@/lib/authz";
+import { todayIso } from "@/lib/date-utc";
 
 // Change orders are metadata-only (product spec §4/Phase 2): they feed the
 // WIP calculation's revised contract value but don't move cash by
@@ -13,6 +15,9 @@ import { createChangeOrderSchema, isoDate, CreateChangeOrderInput } from "@/lib/
 export async function createChangeOrder(
   input: CreateChangeOrderInput,
 ): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = createChangeOrderSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -45,6 +50,9 @@ type SetChangeOrderStatusInput = z.infer<typeof setChangeOrderStatusSchema>;
 export async function setChangeOrderStatus(
   input: SetChangeOrderStatusInput,
 ): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = setChangeOrderStatusSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -58,7 +66,7 @@ export async function setChangeOrderStatus(
       status: data.status,
       approvedDate:
         data.status === "approved"
-          ? new Date(data.approvedDate ?? new Date().toISOString().slice(0, 10))
+          ? new Date(data.approvedDate ?? todayIso())
           : existing.approvedDate,
     },
   });

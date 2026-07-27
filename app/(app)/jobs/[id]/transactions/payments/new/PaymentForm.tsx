@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { recordPayment, editPayment } from "@/app/actions/payments";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
+import { FormError } from "@/components/ui/FormError";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
+import { todayIso } from "@/lib/date-utc";
 
 interface CashAccountOption {
   name: string;
@@ -39,7 +41,7 @@ export function PaymentForm({
 }) {
   const router = useRouter();
   const [amount, setAmount] = useState(initial?.amount ?? "");
-  const [date, setDate] = useState(initial?.date ?? (() => new Date().toISOString().slice(0, 10))());
+  const [date, setDate] = useState(initial?.date ?? todayIso());
   const [memo, setMemo] = useState(initial?.memo ?? "");
   const [billingId, setBillingId] = useState<number | "">("");
   const [cashAccount, setCashAccount] = useState(
@@ -88,11 +90,7 @@ export function PaymentForm({
       onSubmit={handleSubmit}
       className="max-w-lg space-y-4 rounded-lg border border-border bg-surface p-6"
     >
-      {error && (
-        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
-          {error}
-        </div>
-      )}
+      <FormError error={error} />
       {!initial && unpaidBillings.length > 0 && (
         <Field label="Apply To" hint="optional — links this payment to a specific pay app for AR aging">
           <select

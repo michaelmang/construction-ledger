@@ -3,6 +3,8 @@ import { getCostTypePivotByJob } from "@/lib/reports";
 import { Money } from "@/components/Money";
 
 export const dynamic = "force-dynamic";
+// Fans out one hledger balance call per cost type, plus one for untyped.
+export const maxDuration = 30;
 
 export default async function CostTypesReportPage() {
   const rows = await getCostTypePivotByJob(["active", "complete"]);

@@ -86,4 +86,76 @@ describe("git auto-commit on every write path", () => {
     await removeTransaction(txnid, "test: delete");
     expect(await commitCount(journalDir)).toBe(3);
   });
+
+  // Regression test for a real bug found during V4 Phase 2: isomorphic-git's
+  // statusMatrix() decides whether a file counts as "changed" via a
+  // stat-based (mtime/size) fast path rather than always rehashing content.
+  // Two writes of same-length-but-different content landing close together
+  // in time could make it report "unmodified" even though the bytes
+  // genuinely differ — confirmed directly with a standalone reproduction
+  // (write "hello", commit, write "world" to the same path, statusMatrix
+  // still reported WorkdirStatus=1/unmodified). Since edited journal
+  // entries very often keep the same digit count (e.g. $50.00 -> $60.00),
+  // this silently dropped real commits for realistic edits. Fixed in
+  // journal-git.ts by never asking statusMatrix what changed — everything
+  // gets added unconditionally, and git.commit()/git.add() were confirmed
+  // to always rehash actual content correctly regardless of stat drift.
+  it("commits every edit even when the new content is the same byte length as the old", async () => {
+    const before = await commitCount(journalDir);
+
+    const { txnid } = await recordTransaction(
+      {
+        kind: "expense",
+        jobId: null,
+        date: "2026-07-24",
+        description: "Same-length edit test",
+        tags: {},
+        postings: [
+          { account: "expenses:jobs:X:a", amount: new Decimal("50.00") },
+          { account: "liabilities:accounts payable:v", amount: new Decimal("-50.00") },
+        ],
+        amount: new Decimal("50.00"),
+      },
+      "test: same-length create",
+    );
+    txnids.push(txnid);
+    expect(await commitCount(journalDir)).toBe(before + 1);
+
+    // Same digit count as the original ("50.00" -> "60.00"), no delay
+    // introduced — the exact conditions the bug needed to reproduce.
+    for (const amount of ["60.00", "70.00", "80.00"]) {
+      await updateTransaction(
+        txnid,
+        {
+          kind: "expense",
+          jobId: null,
+          date: "2026-07-24",
+          description: "Same-length edit test",
+          tags: {},
+          postings: [
+            { account: "expenses:jobs:X:a", amount: new Decimal(amount) },
+            { account: "liabilities:accounts payable:v", amount: new Decimal(amount).negated() },
+          ],
+          amount: new Decimal(amount),
+        },
+        `test: edit to ${amount}`,
+      );
+    }
+
+    // 1 create + 3 edits, every single one a real commit.
+    expect(await commitCount(journalDir)).toBe(before + 4);
+
+    // And the content genuinely reflects the last edit, not a stale one.
+    const { stdout } = await execFileAsync(
+      "git",
+      ["show", "HEAD:2026.journal"],
+      { cwd: journalDir },
+    );
+    expect(stdout).toContain("80.00");
+    expect(stdout).not.toContain("50.00");
+    expect(stdout).not.toContain("60.00");
+    expect(stdout).not.toContain("70.00");
+
+    await removeTransaction(txnid, "test: same-length delete");
+  });
 });

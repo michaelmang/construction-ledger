@@ -9,6 +9,9 @@ import { DateRangeControl } from "@/components/ui/DateRangeControl";
 import { StatCardSkeleton, ChartSkeleton } from "@/components/ui/Skeleton";
 import { primaryButtonClass, secondaryButtonClass } from "@/components/form";
 
+// Cost trend samples many hledger calls, one per period.
+export const maxDuration = 30;
+
 // Stat cards and the cost trend chart are independent hledger-backed
 // queries — each streams in via its own Suspense boundary rather than
 // blocking the whole page on both.

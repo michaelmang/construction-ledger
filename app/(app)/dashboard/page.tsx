@@ -13,6 +13,7 @@ import {
   getLaborPercentOfRevenue,
 } from "@/lib/reports";
 import { resolveDateRangeParams, ResolvedDateRange } from "@/lib/date-range";
+import { getLedgerHealth } from "@/lib/ledger-health";
 import { Money } from "@/components/Money";
 import { formatUSD } from "@/lib/money";
 import { StatCard } from "@/components/ui/StatCard";
@@ -23,6 +24,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCardSkeleton, ChartSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { tableWrapClass, tableClass, theadClass, thClass, tbodyClass, trClass, tdClass, tdNumericClass } from "@/components/table";
+
+// Fans out ~8 independent hledger-backed queries (see comment below) — the
+// platform default is too tight for a cold container on a slow journal
+// fetch.
+export const maxDuration = 30;
 
 const RETAINAGE_OVERDUE_DAYS = 60;
 const AR_OVERDUE_DAYS = 30;
@@ -41,7 +47,15 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-10">
-      <PageHeader eyebrow="Overview" title="Dashboard" />
+      <PageHeader
+        eyebrow="Overview"
+        title="Dashboard"
+        action={
+          <Suspense fallback={null}>
+            <LedgerHealthBadge />
+          </Suspense>
+        }
+      />
 
       <Suspense fallback={<StatsRowSkeleton />}>
         <StatsRow />
@@ -74,6 +88,28 @@ export default async function DashboardPage({
       <Suspense fallback={null}>
         <AlertsSection />
       </Suspense>
+    </div>
+  );
+}
+
+// Surfaces lib/hledger.ts's check() result (V4 spec Phase 2) — previously
+// dead code that verified nothing was ever shown to anyone. "Never
+// checked" (no row yet) is deliberately distinct from "Verified": it means
+// the daily cron (/api/cron/verify-ledger) hasn't run yet, not that the
+// books are fine.
+async function LedgerHealthBadge() {
+  const health = await getLedgerHealth();
+  if (!health) {
+    return <Pill tone="neutral">Books: never checked</Pill>;
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Pill tone={health.ok ? "positive" : "negative"}>
+        {health.ok ? "Books verified" : "Books need attention"}
+      </Pill>
+      <span className="text-xs text-text-3">
+        as of {health.lastCheckedAt.toISOString().slice(0, 10)}
+      </span>
     </div>
   );
 }

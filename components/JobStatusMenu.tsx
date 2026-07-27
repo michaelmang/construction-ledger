@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { setJobStatus } from "@/app/actions/jobs";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
+import { pillToneClasses, PillTone } from "@/components/ui/Pill";
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
@@ -11,10 +12,10 @@ const STATUS_LABELS: Record<string, string> = {
   archived: "Archived",
 };
 
-const STATUS_CLASSES: Record<string, string> = {
-  active: "bg-positive-soft text-positive",
-  complete: "bg-surface-2 text-text-2",
-  archived: "bg-negative-soft text-negative",
+const STATUS_TONE: Record<string, PillTone> = {
+  active: "positive",
+  complete: "neutral",
+  archived: "negative",
 };
 
 export function JobStatusMenu({ jobId, status }: { jobId: number; status: string }) {
@@ -43,7 +44,7 @@ export function JobStatusMenu({ jobId, status }: { jobId: number; status: string
         value={status}
         onChange={(e) => handleChange(e.target.value)}
         disabled={saving}
-        className={`rounded-full border-0 py-0.5 pl-3 pr-6 text-xs font-medium capitalize ${STATUS_CLASSES[status] ?? "bg-surface-2 text-text-2"}`}
+        className={`rounded-full border-0 py-0.5 pl-3 pr-6 text-xs font-medium capitalize ${pillToneClasses(STATUS_TONE[status] ?? "neutral")}`}
       >
         {Object.entries(STATUS_LABELS).map(([value, label]) => (
           <option key={value} value={value}>

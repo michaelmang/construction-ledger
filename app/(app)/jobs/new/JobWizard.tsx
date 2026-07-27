@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createJob, createCostCode, setBudget } from "@/app/actions/jobs";
 import { inputClass, primaryButtonClass, secondaryButtonClass, Field } from "@/components/form";
+import { FormError } from "@/components/ui/FormError";
 
 interface CostCodeOption {
   id: number;
@@ -119,11 +120,7 @@ export function JobWizard({ existingCostCodes }: { existingCostCodes: CostCodeOp
         ))}
       </ol>
 
-      {error && (
-        <div className="rounded-md border border-negative/30 bg-negative-soft px-4 py-2 text-sm text-negative">
-          {error}
-        </div>
-      )}
+      <FormError error={error} />
 
       {step === 1 && (
         <div className="space-y-4 rounded-lg border border-border bg-surface p-6">

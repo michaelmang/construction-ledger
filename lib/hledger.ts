@@ -4,7 +4,7 @@ import { copyFile, chmod, access } from "node:fs/promises";
 import path from "node:path";
 import Decimal from "decimal.js";
 import { money } from "./money";
-import { ensureJournalReady } from "./journal-git";
+import { ensureJournalReady, currentJournalSha } from "./journal-git";
 
 const execFileAsync = promisify(execFile);
 
@@ -25,11 +25,15 @@ function mainJournalPath(): string {
 // their exec bit in transit. Copying to /tmp (writable) and chmod'ing there
 // once per container sidesteps both problems instead of hoping the bundled
 // copy is directly executable in place. Cached at module scope so this only
-// runs once per warm container, not once per request.
+// runs once per warm container, not once per request. GitHub Actions
+// runners hit the same "no hledger on PATH" problem as Vercel (no Homebrew,
+// no package manager install), so CI runs the same fetch-hledger.ts step
+// and this picks up the vendored binary there too — process.cwd() is just
+// the repo root on a runner, so the same bin/hledger/ path resolves.
 let hledgerBinaryPathPromise: Promise<string> | null = null;
 
 async function hledgerBinaryPath(): Promise<string> {
-  if (!process.env.VERCEL) return "hledger"; // local dev — PATH lookup, Homebrew install
+  if (!process.env.VERCEL && !process.env.CI) return "hledger"; // local dev — PATH lookup, Homebrew install
 
   if (!hledgerBinaryPathPromise) {
     hledgerBinaryPathPromise = (async () => {
@@ -57,18 +61,42 @@ export class HledgerError extends Error {
   }
 }
 
+// Every dashboard render fans out into ~15-20 hledger process spawns, each
+// re-parsing the whole journal from scratch (V4-AUDIT-AND-SPEC.md H4).
+// Cache keyed on (journal commit sha, argv): the sha changes on every
+// single write (see journal-git.ts's currentJournalSha), so it's a cache
+// key that's always correct with no separate invalidation path to keep in
+// sync, and a whole-cache-clear on sha change bounds memory to "results
+// for the currently-checked-out commit" instead of growing forever.
+let cachedSha: string | null = null;
+let queryCache = new Map<string, unknown>();
+
 // Every call site shares this: same binary, same file, same JSON output flag,
 // same error handling. Args are passed as an array (never shell-interpolated)
 // so job codes and tags can never be used for command injection.
 async function runHledgerJson(args: string[]): Promise<unknown> {
+  await ensureJournalReady();
+  const sha = await currentJournalSha();
+  if (sha !== cachedSha) {
+    cachedSha = sha;
+    queryCache = new Map();
+  }
+
+  const cacheKey = JSON.stringify(args);
+  if (sha !== null) {
+    const cached = queryCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+  }
+
   try {
-    await ensureJournalReady();
     const { stdout } = await execFileAsync(
       await hledgerBinaryPath(),
       ["-f", mainJournalPath(), ...args, "--output-format=json"],
       { maxBuffer: 1024 * 1024 * 32 },
     );
-    return JSON.parse(stdout);
+    const result = JSON.parse(stdout);
+    if (sha !== null) queryCache.set(cacheKey, result);
+    return result;
   } catch (err) {
     const e = err as { stderr?: string; message: string; code?: string };
     if (e.code === "ENOENT") {

@@ -101,6 +101,86 @@ model PaymentApplication {
   createdAt DateTime @default(now())
 }
 
+// --- Auth (V4 spec Phase 1) ---
+// Standard Auth.js/NextAuth v5 Prisma-adapter schema (User/Account/Session/
+// VerificationToken), confirmed field-for-field against
+// node_modules/@auth/prisma-adapter/src/index.ts and
+// node_modules/@auth/core/adapters.d.ts rather than assumed from memory.
+// `role` is this app's own addition (Auth.js has no concept of roles) —
+// copied onto the row from AllowedUser the first time each person signs in.
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          String    @default("viewer") // admin | bookkeeper | viewer
+
+  accounts Account[]
+  sessions Session[]
+
+  createdAt DateTime @default(now())
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// Invite-only allowlist gate (product decision: single company, no public
+// signup). Checked in the Auth.js `signIn` callback before a magic-link
+// email is ever sent, not just after — an email that's never been added
+// here never receives mail. `role` here is the role a newly-created User
+// row is seeded with on first sign-in.
+model AllowedUser {
+  email String @id
+  role  String @default("viewer") // admin | bookkeeper | viewer
+
+  createdAt DateTime @default(now())
+}
+
+// Singleton (always id=1) — the result of the last `hledger check` run
+// (V4 spec Phase 2: "check() was dead code"). Checked daily by
+// /api/cron/verify-ledger and surfaced on the dashboard, so a corrupted or
+// unbalanced journal is a visible "needs attention" state instead of a
+// silent one.
+model LedgerHealth {
+  id            Int      @id @default(1)
+  lastCheckedAt DateTime
+  ok            Boolean
+  error         String?
+}
+
 // Tracks every domain transaction (expense, payment, billing) that maps to a
 // journal entry, keyed by the txnid tag written into the journal file. Enables
 // idempotent edit/delete: look up the entry by txnid, not by re-parsing intent.
@@ -136,13 +216,14 @@ model OverheadCategory {
 // cash position reflects actual bank reality, not just journal activity
 // since the app was set up (v2 spec §F8).
 model CashAccount {
-  id             Int       @id @default(autoincrement())
-  name           String    @unique // short slug used in the hledger account path, e.g. "checking"
-  label          String // display label, e.g. "Operating Checking"
-  isDefault      Boolean   @default(false)
-  openingBalance Decimal   @default(0)
-  openingDate    DateTime?
-  createdAt      DateTime  @default(now())
+  id                  Int       @id @default(autoincrement())
+  name                String    @unique // short slug used in the hledger account path, e.g. "checking"
+  label               String // display label, e.g. "Operating Checking"
+  isDefault           Boolean   @default(false)
+  openingBalance      Decimal   @default(0)
+  openingDate         DateTime?
+  openingBalanceTxnid String? // the opening-balance journal entry, if the opening balance was ever nonzero — lets editOpeningBalance find it later (V4 spec Phase 2)
+  createdAt           DateTime  @default(now())
 }
 
 // A vendor bill (job-cost or overhead). Created alongside the expense journal

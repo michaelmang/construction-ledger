@@ -16,6 +16,7 @@ import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/t
 import { formatUSD } from "@/lib/money";
 import { computeRetainageWithheld, BillingMathError } from "@/lib/billing-math";
 import { billedToDate, getRevisedContractValue } from "@/lib/reports";
+import { requireWriteRole } from "@/lib/authz";
 
 class ActionError extends Error {}
 
@@ -85,6 +86,9 @@ async function buildBillingEntry(
 export async function createProgressBilling(
   input: CreateProgressBillingInput,
 ): Promise<ActionResult<{ id: number; txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = createProgressBillingSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -125,6 +129,9 @@ export async function createProgressBilling(
 export async function editProgressBilling(
   input: EditProgressBillingInput,
 ): Promise<ActionResult<{ id: number; txnid: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = editProgressBillingSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
@@ -170,6 +177,9 @@ export async function editProgressBilling(
 }
 
 export async function deleteProgressBilling(id: number): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   try {
     const existing = await prisma.progressBilling.findUnique({ where: { id } });
     if (!existing) return fail(`Progress billing ${id} not found`);

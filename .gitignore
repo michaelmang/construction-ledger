@@ -50,3 +50,14 @@ next-env.d.ts
 # a build artifact, never committed.
 /bin/hledger
 
+# Playwright MCP tool output (screenshots, console logs, snapshots) —
+# scratch artifacts from live browser verification, not project files.
+/.playwright-mcp
+
+# Playwright test runner output — the e2e smoke suite's own report/traces,
+# and the storage-state session cookies e2e/global-setup.ts generates
+# (real session tokens, must never be committed).
+/test-results
+/playwright-report
+/e2e/.auth
+

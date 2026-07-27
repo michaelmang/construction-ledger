@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { ActionResult, ok, fail } from "@/lib/action-result";
+import { requireWriteRole } from "@/lib/authz";
 import {
   createJobSchema,
   createCostCodeSchema,
@@ -15,6 +16,9 @@ import {
 } from "@/lib/validation";
 
 export async function createJob(input: CreateJobInput): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = createJobSchema.safeParse(input);
   if (!parsed.success) {
     return fail(parsed.error.issues.map((i) => i.message).join("; "));
@@ -44,6 +48,9 @@ export async function createJob(input: CreateJobInput): Promise<ActionResult<{ i
 export async function createCostCode(
   input: CreateCostCodeInput,
 ): Promise<ActionResult<{ id: number }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = createCostCodeSchema.safeParse(input);
   if (!parsed.success) {
     return fail(parsed.error.issues.map((i) => i.message).join("; "));
@@ -60,6 +67,9 @@ export async function createCostCode(
 }
 
 export async function setBudget(input: SetBudgetInput): Promise<ActionResult<{ jobId: number; costCodeId: number }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = setBudgetSchema.safeParse(input);
   if (!parsed.success) {
     return fail(parsed.error.issues.map((i) => i.message).join("; "));
@@ -92,6 +102,9 @@ export async function setBudget(input: SetBudgetInput): Promise<ActionResult<{ j
 export async function setJobStatus(
   input: SetJobStatusInput,
 ): Promise<ActionResult<{ jobId: number; status: string }>> {
+  const denied = await requireWriteRole();
+  if (denied) return denied;
+
   const parsed = setJobStatusSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;

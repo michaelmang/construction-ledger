@@ -2,6 +2,12 @@
 // charts. Shared by app/page.tsx and app/jobs/[id]/page.tsx so preset chips
 // and the custom from/to form parse identically on both pages — one
 // canonical param scheme, not per-page reinterpretation.
+//
+// All boundary math here goes through lib/date-utc.ts's UTC-anchored
+// helpers (V4 spec Phase 3: "date convention is mixed") — see that
+// module's header for why.
+
+import { addUtcDays, addUtcMonths, parseIsoDate } from "./date-utc";
 
 export type RangePreset = "8w" | "3m" | "6m" | "1y";
 
@@ -16,37 +22,21 @@ export const RANGE_PRESETS: { value: RangePreset; label: string }[] = [
 // page load with no query string.
 const DEFAULT_PRESET: RangePreset = "3m";
 
-function addDays(d: Date, n: number): Date {
-  const copy = new Date(d);
-  copy.setDate(copy.getDate() + n);
-  return copy;
-}
-
-function addMonths(d: Date, n: number): Date {
-  return new Date(d.getFullYear(), d.getMonth() + n, d.getDate());
-}
-
 function presetToFrom(preset: RangePreset, to: Date): Date {
   switch (preset) {
     case "8w":
-      return addDays(to, -8 * 7);
+      return addUtcDays(to, -8 * 7);
     case "3m":
-      return addMonths(to, -3);
+      return addUtcMonths(to, -3);
     case "6m":
-      return addMonths(to, -6);
+      return addUtcMonths(to, -6);
     case "1y":
-      return addMonths(to, -12);
+      return addUtcMonths(to, -12);
   }
 }
 
 function isRangePreset(value: string | undefined): value is RangePreset {
   return RANGE_PRESETS.some((p) => p.value === value);
-}
-
-function parseDate(value: string | undefined): Date | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value ? null : date;
 }
 
 export interface ResolvedDateRange {
@@ -65,8 +55,8 @@ export function resolveDateRangeParams(searchParams: {
   from?: string;
   to?: string;
 }): ResolvedDateRange {
-  const to = parseDate(searchParams.to) ?? new Date();
-  const from = parseDate(searchParams.from);
+  const to = parseIsoDate(searchParams.to) ?? new Date();
+  const from = parseIsoDate(searchParams.from);
 
   if (from && from <= to) {
     return { from, to, preset: null };

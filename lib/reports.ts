@@ -23,6 +23,7 @@ import {
   CostTypePivotAmount,
   CostTypeBucket,
 } from "./wip";
+import { addUtcDays, addUtcMonths, startOfUtcMonth, utcDaysBetween, utcMonthsBetween, toIsoDate } from "./date-utc";
 
 function toDecimal(value: unknown): Decimal {
   return new Decimal(value === null || value === undefined ? 0 : String(value));
@@ -350,30 +351,20 @@ async function mapBounded<T, R>(
   return results;
 }
 
-function addDays(d: Date, n: number): Date {
-  const copy = new Date(d);
-  copy.setDate(copy.getDate() + n);
-  return copy;
-}
-
-function addMonths(d: Date, n: number): Date {
-  return new Date(d.getFullYear(), d.getMonth() + n, 1);
-}
-
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function monthsBetween(a: Date, b: Date): number {
-  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
-}
+// Local aliases kept for call-site brevity below; all boundary math lives
+// in lib/date-utc.ts (V4 spec Phase 3: "date convention is mixed" — see
+// that module's header). startOfMonth here always resets to the 1st,
+// unlike date-utc's day-preserving addUtcMonths, so month-bucket call
+// sites compose startOfMonth(addMonths(...)) rather than calling a
+// separate day-resetting variant.
+const addDays = addUtcDays;
+const addMonths = addUtcMonths;
+const startOfMonth = startOfUtcMonth;
+const daysBetween = utcDaysBetween;
+const monthsBetween = utcMonthsBetween;
 
 function toHledgerDateArg(d: Date): string {
-  return d.toISOString().slice(0, 10).replace(/-/g, "");
+  return toIsoDate(d).replace(/-/g, "");
 }
 
 // Weekly natural cadence (getCashTrend's granularity), coarsening beyond
@@ -565,25 +556,24 @@ export interface OverBudgetAlert {
 // spec §F15).
 export async function getOverBudgetAlerts(): Promise<OverBudgetAlert[]> {
   const jobs = await prisma.job.findMany({ where: { status: "active" } });
-  const alerts: OverBudgetAlert[] = [];
 
-  for (const job of jobs) {
-    const rows = await getCostCodeBreakdown(job.id);
-    for (const row of rows) {
-      if (row.remaining.isNegative() && !row.estimatedAtCompletion.isZero()) {
-        alerts.push({
+  const perJob = await Promise.all(
+    jobs.map(async (job) => {
+      const rows = await getCostCodeBreakdown(job.id);
+      return rows
+        .filter((row) => row.remaining.isNegative() && !row.estimatedAtCompletion.isZero())
+        .map((row) => ({
           jobId: job.id,
           jobCode: job.code,
           jobName: job.name,
           costCode: row.costCode,
           costCodeName: row.costCodeName,
           utilizationPct: row.actual.dividedBy(row.estimatedAtCompletion).times(100),
-        });
-      }
-    }
-  }
+        }));
+    }),
+  );
 
-  return alerts;
+  return perJob.flat();
 }
 
 export interface DashboardSummary {
