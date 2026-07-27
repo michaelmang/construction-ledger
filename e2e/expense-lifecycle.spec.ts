@@ -37,7 +37,13 @@ test("records, edits, and deletes an expense, all three visible in Activity", as
 
   await editedRow.getByRole("button", { name: "Delete" }).click();
   await editedRow.getByRole("button", { name: "Confirm" }).click();
-  await expect(page.getByRole("row", { name: new RegExp(marker) })).toHaveCount(0, { timeout: 30_000 });
+  // A real failure's page snapshot showed the row still reading "Deleting…"
+  // (still in flight, not stuck) at the 30s mark — this is the third
+  // isomorphic-git commit this single test triggers (record, edit,
+  // delete), each serialized through lib/journal-git.ts's write queue, so
+  // it's the one most likely to still be waiting behind the first two
+  // under CI load. Longer headroom here specifically, not a guess.
+  await expect(page.getByRole("row", { name: new RegExp(marker) })).toHaveCount(0, { timeout: 60_000 });
 
   // The Transactions-tab checks above already prove the record/edit/delete
   // sequence worked end to end (row appeared at $321, then $450, then was

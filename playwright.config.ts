@@ -22,10 +22,13 @@ export default defineConfig({
   // "html" (never auto-opened, matching CI's non-interactive context) gives
   // a real report with screenshots/traces to download next time this fails.
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
-  // Default per-test timeout doubled from Playwright's 30s default — a
+  // Default per-test timeout, well above Playwright's 30s default — a
   // shared GitHub Actions runner is measurably slower than local dev for
-  // the isomorphic-git commits several specs wait on after a mutation.
-  timeout: 60_000,
+  // the isomorphic-git commits several specs wait on after a mutation, and
+  // expense-lifecycle.spec.ts's delete step alone now waits up to 60s
+  // (evidence: a real failure's page snapshot showed it still mid-flight
+  // at 30s), so the whole-test budget has to comfortably exceed that.
+  timeout: 90_000,
   globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: "http://localhost:3000",
