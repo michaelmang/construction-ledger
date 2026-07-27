@@ -187,14 +187,30 @@ export const approveChangeOrderSchema = z.object({
 });
 export type ApproveChangeOrderInput = z.infer<typeof approveChangeOrderSchema>;
 
-// v3 spec §F19: rate components are decimal fractions of base rate (see
-// lib/labor.ts for the burden formula).
+// v5 spec (job costing): the inputs lib/labor-burden.ts's computeLaborBurden
+// needs per employee. currentPay is $/yr if payType="salary", $/hr if
+// payType="hourly" (disambiguated by payType at every read site, not by the
+// field name). wcCodeId/startDate are optional even though the UI requires
+// them for new employees — existing rows predate this feature and can't be
+// backfilled with real data automatically (lib/labor-burden.ts treats a
+// missing WC code as 0% rate and a missing start date as zero tenure).
+export const payTypeSchema = z.enum(["salary", "hourly"]);
+export const employmentTypeSchema = z.enum(["full_time", "part_time", "seasonal", "intern"]);
+
 export const createEmployeeSchema = z.object({
   name: z.string().min(1, "Employee name is required"),
-  baseRate: positiveDecimalAmount,
-  payrollTaxPct: nonNegativeDecimalAmount.optional(),
-  workersCompPct: nonNegativeDecimalAmount.optional(),
-  benefitsPct: nonNegativeDecimalAmount.optional(),
+  number: z.string().min(1).optional(),
+  jobTitle: z.string().optional(),
+  payType: payTypeSchema,
+  employmentType: employmentTypeSchema,
+  wcCodeId: z.number().int().positive().optional(),
+  startDate: isoDate.optional(),
+  holidayDays: z.number().int().nonnegative().optional(), // undefined = inherit company default
+  discretionaryPtoHours: nonNegativeDecimalAmount.optional(),
+  currentPay: positiveDecimalAmount,
+  healthInsMonthly: nonNegativeDecimalAmount.optional(),
+  retirementPct: nonNegativeDecimalAmount.optional(),
+  yearlyVehicleValue: nonNegativeDecimalAmount.optional(),
 });
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 
@@ -208,6 +224,48 @@ export const setEmployeeActiveSchema = z.object({
   active: z.boolean(),
 });
 export type SetEmployeeActiveInput = z.infer<typeof setEmployeeActiveSchema>;
+
+// v5 spec (job costing) — company-wide labor-burden assumptions, managed
+// admin-only at /settings/labor-burden.
+export const updateLaborBurdenSettingsSchema = z.object({
+  sickTimeAccrualPct: nonNegativeDecimalAmount,
+  companyHolidayDays: z.number().int().nonnegative(),
+  avgHoursPerYear: positiveDecimalAmount,
+  ficaPct: nonNegativeDecimalAmount,
+  futaPct: nonNegativeDecimalAmount,
+  stateUnemploymentPct: nonNegativeDecimalAmount,
+});
+export type UpdateLaborBurdenSettingsInput = z.infer<typeof updateLaborBurdenSettingsSchema>;
+
+export const createWorkersCompRateSchema = z.object({
+  code: z.string().min(1, "WC code is required"),
+  description: z.string().min(1, "Description is required"),
+  rate: nonNegativeDecimalAmount,
+});
+export type CreateWorkersCompRateInput = z.infer<typeof createWorkersCompRateSchema>;
+
+export const updateWorkersCompRateSchema = createWorkersCompRateSchema.extend({
+  id: z.number().int().positive(),
+});
+export type UpdateWorkersCompRateInput = z.infer<typeof updateWorkersCompRateSchema>;
+
+export const setWorkersCompRateActiveSchema = z.object({
+  id: z.number().int().positive(),
+  active: z.boolean(),
+});
+export type SetWorkersCompRateActiveInput = z.infer<typeof setWorkersCompRateActiveSchema>;
+
+// Tiers are edited as a cohesive small set (replace-the-whole-list), not
+// row by row — see app/actions/labor-burden-settings.ts.
+export const upsertPtoAccrualTiersSchema = z
+  .array(
+    z.object({
+      minTenureYears: z.number().int().nonnegative(),
+      accrualPct: nonNegativeDecimalAmount,
+    }),
+  )
+  .min(1, "At least one PTO accrual tier is required");
+export type UpsertPtoAccrualTiersInput = z.infer<typeof upsertPtoAccrualTiersSchema>;
 
 export const recordLaborSchema = z.object({
   jobId: z.number().int().positive(),

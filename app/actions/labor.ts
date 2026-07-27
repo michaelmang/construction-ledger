@@ -12,7 +12,8 @@ import {
   EditLaborInput,
 } from "@/lib/validation";
 import { accruedPayroll, employeeSlug, expenseJobCostCode } from "@/lib/accounts";
-import { laborAmounts } from "@/lib/labor";
+import { computeLaborBurden } from "@/lib/labor-burden";
+import { getCompanyAssumptions } from "@/lib/queries";
 import { JournalValidationError } from "@/lib/journal";
 import { recordTransaction, updateTransaction, removeTransaction } from "@/lib/transactions";
 import { formatUSD } from "@/lib/money";
@@ -23,8 +24,11 @@ class ActionError extends Error {}
 // Labor is a burdened job cost, not a vendor bill — no AP posting, no Bill
 // row. It clears through liabilities:accrued payroll (v3 spec §F18/§F19
 // design decision 4). Rates are snapshotted onto the LaborEntry row from the
-// Employee at build time, so a later rate change never rewrites the cost of
-// past work.
+// Employee + company-wide assumptions at build time (v5 spec: job costing —
+// lib/labor-burden.ts), so a later rate/assumption change never rewrites
+// the cost of past work. Straight hourlyLaborBurden posts unconditionally —
+// this app doesn't track a straight/OT hours split yet (otLaborBurden is
+// display-only on the /job-costing reference screen).
 async function buildLaborEntry(
   jobId: number,
   costCodeId: number,
@@ -40,18 +44,29 @@ async function buildLaborEntry(
   const costCode = await prisma.costCode.findUnique({ where: { id: costCodeId } });
   if (!costCode) throw new ActionError(`Cost code ${costCodeId} not found`);
 
-  const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+  const employee = await prisma.employee.findUnique({ where: { id: employeeId }, include: { wcCode: true } });
   if (!employee) throw new ActionError(`Employee ${employeeId} not found`);
 
   const hours = new Decimal(hoursStr);
-  const components = {
-    baseRate: employee.baseRate,
-    payrollTaxPct: employee.payrollTaxPct,
-    workersCompPct: employee.workersCompPct,
-    benefitsPct: employee.benefitsPct,
-  };
-  const { gross, burdened } = laborAmounts(components, hours);
-  const rate = burdened.dividedBy(hours);
+  const company = await getCompanyAssumptions();
+  const burden = computeLaborBurden(
+    {
+      payType: employee.payType as "salary" | "hourly",
+      startDate: employee.startDate ?? employee.createdAt,
+      holidayDays: employee.holidayDays,
+      discretionaryPtoHours: employee.discretionaryPtoHours,
+      currentPay: employee.currentPay,
+      healthInsMonthly: employee.healthInsMonthly,
+      retirementPct: employee.retirementPct,
+      yearlyVehicleValue: employee.yearlyVehicleValue,
+      wcRate: employee.wcCode?.rate ?? 0,
+    },
+    company,
+    new Date(date),
+  );
+  const gross = burden.hourlyRate.times(hours).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const burdened = burden.hourlyLaborBurden.times(hours).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const rate = burden.hourlyLaborBurden;
   const slug = employeeSlug(employee.name);
   const description = `${employee.name} — ${hours.toFixed(2)}h ${costCode.code}${memo ? ` - ${memo}` : ""}`;
 
@@ -62,6 +77,7 @@ async function buildLaborEntry(
     hours,
     grossAmount: gross,
     burdenedAmount: burdened,
+    baseRate: burden.hourlyRate,
     burdenedRate: rate,
     entry: {
       kind: "labor" as const,
@@ -90,7 +106,7 @@ export async function recordLaborCost(
   const data = parsed.data;
 
   try {
-    const { job, costCode, employee, hours, grossAmount, burdenedAmount, burdenedRate, entry } =
+    const { job, costCode, employee, hours, grossAmount, burdenedAmount, baseRate, burdenedRate, entry } =
       await buildLaborEntry(data.jobId, data.costCodeId, data.employeeId, data.hours, data.date, data.memo);
 
     const { txnid } = await recordTransaction(
@@ -106,7 +122,7 @@ export async function recordLaborCost(
         costCodeId: costCode.id,
         date: new Date(data.date),
         hours: hours.toFixed(2),
-        baseRate: employee.baseRate,
+        baseRate: baseRate.toFixed(2),
         burdenedRate: burdenedRate.toFixed(2),
         grossAmount: grossAmount.toFixed(2),
         burdenedAmount: burdenedAmount.toFixed(2),
@@ -132,7 +148,7 @@ export async function editLaborCost(
   const data = parsed.data;
 
   try {
-    const { job, costCode, employee, hours, grossAmount, burdenedAmount, burdenedRate, entry } =
+    const { job, costCode, employee, hours, grossAmount, burdenedAmount, baseRate, burdenedRate, entry } =
       await buildLaborEntry(data.jobId, data.costCodeId, data.employeeId, data.hours, data.date, data.memo);
 
     await updateTransaction(
@@ -149,7 +165,7 @@ export async function editLaborCost(
         costCodeId: costCode.id,
         date: new Date(data.date),
         hours: hours.toFixed(2),
-        baseRate: employee.baseRate,
+        baseRate: baseRate.toFixed(2),
         burdenedRate: burdenedRate.toFixed(2),
         grossAmount: grossAmount.toFixed(2),
         burdenedAmount: burdenedAmount.toFixed(2),

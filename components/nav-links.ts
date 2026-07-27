@@ -15,6 +15,8 @@ export const NAV_LINKS = [
 export const ADMIN_ONLY_NAV_LINKS = [
   { href: "/users", label: "Users" },
   { href: "/ledger-doctor", label: "Ledger Doctor" },
+  { href: "/job-costing", label: "Job Costing" },
+  { href: "/settings/labor-burden", label: "Labor Burden Settings" },
 ];
 
 export interface SidebarUser {

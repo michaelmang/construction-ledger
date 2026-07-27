@@ -1,6 +1,12 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { listCostCodes, listVendors, listActiveEmployees } from "@/lib/queries";
+import {
+  listCostCodes,
+  listVendors,
+  listActiveEmployees,
+  toEmployeeOption,
+  getCompanyAssumptions,
+} from "@/lib/queries";
 import { CostType } from "@/lib/cost-types";
 import { ExpenseForm } from "../../new/ExpenseForm";
 
@@ -13,19 +19,13 @@ export default async function EditExpensePage({
   const bill = await prisma.bill.findUnique({ where: { txnid } });
   if (!bill || !bill.costCodeId) notFound();
 
-  const [costCodes, vendors, employeesRaw] = await Promise.all([
+  const [costCodes, vendors, employeesRaw, company] = await Promise.all([
     listCostCodes(),
     listVendors(),
     listActiveEmployees(),
+    getCompanyAssumptions(),
   ]);
-  const employees = employeesRaw.map((e) => ({
-    id: e.id,
-    name: e.name,
-    baseRate: e.baseRate.toString(),
-    payrollTaxPct: e.payrollTaxPct.toString(),
-    workersCompPct: e.workersCompPct.toString(),
-    benefitsPct: e.benefitsPct.toString(),
-  }));
+  const employees = employeesRaw.map(toEmployeeOption);
 
   return (
     <div className="space-y-6">
@@ -35,6 +35,7 @@ export default async function EditExpensePage({
         costCodes={costCodes}
         vendors={vendors}
         employees={employees}
+        company={company}
         initial={{
           txnid,
           vendorId: bill.vendorId,

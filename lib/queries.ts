@@ -143,13 +143,102 @@ export async function listOverheadBills() {
 }
 
 export async function listEmployees() {
-  return prisma.employee.findMany({ orderBy: { name: "asc" } });
+  return prisma.employee.findMany({ orderBy: { name: "asc" }, include: { wcCode: true } });
 }
 
 export async function listActiveEmployees() {
-  return prisma.employee.findMany({ where: { active: true }, orderBy: { name: "asc" } });
+  return prisma.employee.findMany({
+    where: { active: true },
+    orderBy: { name: "asc" },
+    include: { wcCode: true },
+  });
+}
+
+export async function getEmployee(id: number) {
+  return prisma.employee.findUnique({ where: { id }, include: { wcCode: true } });
 }
 
 export async function getLaborEntry(txnid: string) {
   return prisma.laborEntry.findUnique({ where: { txnid }, include: { employee: true } });
+}
+
+// v5 spec (job costing) — the company-wide reference tables managed at
+// /settings/labor-burden.
+export async function getLaborBurdenSettings() {
+  return prisma.laborBurdenSettings.findUnique({ where: { id: 1 } });
+}
+
+export async function listWorkersCompRates() {
+  return prisma.workersCompRate.findMany({ orderBy: { description: "asc" } });
+}
+
+export async function listActiveWorkersCompRates() {
+  return prisma.workersCompRate.findMany({
+    where: { active: true },
+    orderBy: { description: "asc" },
+  });
+}
+
+export async function listPtoAccrualTiers() {
+  return prisma.ptoAccrualTier.findMany({ orderBy: { minTenureYears: "asc" } });
+}
+
+// Bundles the three company-wide assumption sources into the plain-data
+// shape lib/labor-burden.ts's computeLaborBurden expects — one place that
+// assembles this so app/actions/labor.ts and the /job-costing reference
+// page don't each reassemble it ad hoc. Falls back to
+// LaborBurdenSettings's own Prisma-level defaults if the singleton row
+// hasn't been created yet (shouldn't happen once seeded, but a fresh
+// from-scratch database shouldn't hard-crash on a missing settings row).
+// v5 spec (job costing): the shape lib/labor-burden.ts's computeLaborBurden
+// needs client-side (the labor-entry form's live gross-vs-burdened
+// preview), serialized to strings/ISO dates for the RSC boundary. Defined
+// here (not in a UI file) so both app/(app)/jobs/[id]/transactions/
+// expenses/new/ExpenseForm.tsx and its sibling labor edit form can import
+// one shared type instead of each declaring their own.
+export interface EmployeeOption {
+  id: number;
+  name: string;
+  payType: "salary" | "hourly";
+  startDate: string | null;
+  createdAt: string;
+  holidayDays: number | null;
+  discretionaryPtoHours: string;
+  currentPay: string;
+  healthInsMonthly: string;
+  retirementPct: string;
+  yearlyVehicleValue: string;
+  wcRate: string;
+}
+
+export function toEmployeeOption(
+  employee: Awaited<ReturnType<typeof listActiveEmployees>>[number],
+): EmployeeOption {
+  return {
+    id: employee.id,
+    name: employee.name,
+    payType: employee.payType as "salary" | "hourly",
+    startDate: employee.startDate ? employee.startDate.toISOString().slice(0, 10) : null,
+    createdAt: employee.createdAt.toISOString().slice(0, 10),
+    holidayDays: employee.holidayDays,
+    discretionaryPtoHours: employee.discretionaryPtoHours.toString(),
+    currentPay: employee.currentPay.toString(),
+    healthInsMonthly: employee.healthInsMonthly.toString(),
+    retirementPct: employee.retirementPct.toString(),
+    yearlyVehicleValue: employee.yearlyVehicleValue.toString(),
+    wcRate: employee.wcCode?.rate.toString() ?? "0",
+  };
+}
+
+export async function getCompanyAssumptions() {
+  const [settings, tiers] = await Promise.all([getLaborBurdenSettings(), listPtoAccrualTiers()]);
+  return {
+    sickTimeAccrualPct: settings?.sickTimeAccrualPct.toString() ?? "0.033",
+    companyHolidayDays: settings?.companyHolidayDays ?? 13,
+    avgHoursPerYear: settings?.avgHoursPerYear.toString() ?? "2000",
+    ficaPct: settings?.ficaPct.toString() ?? "0.0765",
+    futaPct: settings?.futaPct.toString() ?? "0.006",
+    stateUnemploymentPct: settings?.stateUnemploymentPct.toString() ?? "0.013",
+    ptoTiers: tiers.map((t) => ({ minTenureYears: t.minTenureYears, accrualPct: t.accrualPct.toString() })),
+  };
 }

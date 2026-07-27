@@ -34,7 +34,8 @@ import {
   vendorAccountSlug,
 } from "../lib/accounts";
 import { formatUSD } from "../lib/money";
-import { laborAmounts } from "../lib/labor";
+import { computeLaborBurden } from "../lib/labor-burden";
+import { getCompanyAssumptions } from "../lib/queries";
 import { CostType } from "../lib/cost-types";
 
 function journalDir(): string {
@@ -73,6 +74,9 @@ async function resetDatabase(): Promise<void> {
   await prisma.costCode.deleteMany();
   await prisma.vendor.deleteMany();
   await prisma.employee.deleteMany();
+  await prisma.workersCompRate.deleteMany();
+  await prisma.ptoAccrualTier.deleteMany();
+  await prisma.laborBurdenSettings.deleteMany();
   await prisma.overheadCategory.deleteMany();
   await prisma.cashAccount.deleteMany();
 }
@@ -179,18 +183,41 @@ async function recordLaborCost(opts: {
   employee: {
     id: number;
     name: string;
-    baseRate: Decimal.Value;
-    payrollTaxPct: Decimal.Value;
-    workersCompPct: Decimal.Value;
-    benefitsPct: Decimal.Value;
+    payType: string;
+    startDate: Date | null;
+    createdAt: Date;
+    holidayDays: number | null;
+    discretionaryPtoHours: Decimal.Value;
+    currentPay: Decimal.Value;
+    healthInsMonthly: Decimal.Value;
+    retirementPct: Decimal.Value;
+    yearlyVehicleValue: Decimal.Value;
+    wcCode: { rate: Decimal.Value } | null;
   };
   hours: string;
   date: string;
   memo?: string;
 }) {
   const hours = new Decimal(opts.hours);
-  const { gross, burdened } = laborAmounts(opts.employee, hours);
-  const rate = burdened.dividedBy(hours);
+  const company = await getCompanyAssumptions();
+  const burden = computeLaborBurden(
+    {
+      payType: opts.employee.payType as "salary" | "hourly",
+      startDate: opts.employee.startDate ?? opts.employee.createdAt,
+      holidayDays: opts.employee.holidayDays,
+      discretionaryPtoHours: opts.employee.discretionaryPtoHours,
+      currentPay: opts.employee.currentPay,
+      healthInsMonthly: opts.employee.healthInsMonthly,
+      retirementPct: opts.employee.retirementPct,
+      yearlyVehicleValue: opts.employee.yearlyVehicleValue,
+      wcRate: opts.employee.wcCode?.rate ?? 0,
+    },
+    company,
+    new Date(opts.date),
+  );
+  const gross = burden.hourlyRate.times(hours).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const burdened = burden.hourlyLaborBurden.times(hours).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const rate = burden.hourlyLaborBurden;
   const slug = employeeSlug(opts.employee.name);
   const description = `${opts.employee.name} — ${hours.toFixed(2)}h ${opts.costCode.code}${opts.memo ? ` - ${opts.memo}` : ""}`;
 
@@ -219,7 +246,7 @@ async function recordLaborCost(opts: {
       costCodeId: opts.costCode.id,
       date: new Date(opts.date),
       hours: hours.toFixed(2),
-      baseRate: String(opts.employee.baseRate),
+      baseRate: burden.hourlyRate.toFixed(2),
       burdenedRate: rate.toFixed(2),
       grossAmount: gross.toFixed(2),
       burdenedAmount: burdened.toFixed(2),
@@ -429,19 +456,105 @@ async function main() {
     prisma.overheadCategory.create({ data: { code: "FUEL", name: "Fuel" } }),
   ]);
 
-  // Distinct burden profiles (v3 spec §F18/§F19) so the pivot report and
-  // "labor as % of revenue" trend render with real density: a carpenter
-  // (moderate workers' comp, no benefits), an electrician (higher workers'
-  // comp — trade-specific risk), a foreman (full benefits package).
+  // v5 spec (job costing) — company-wide labor-burden assumptions, mirroring
+  // the friend-provided Excel workbook's own Assumptions tab exactly (rates
+  // captured by re-parsing that workbook, not invented).
+  await prisma.laborBurdenSettings.create({
+    data: {
+      id: 1,
+      sickTimeAccrualPct: "0.033",
+      companyHolidayDays: 13,
+      avgHoursPerYear: "2000",
+      ficaPct: "0.0765",
+      futaPct: "0.006",
+      stateUnemploymentPct: "0.013",
+    },
+  });
+  await prisma.ptoAccrualTier.createMany({
+    data: [
+      { minTenureYears: 0, accrualPct: "0.01" },
+      { minTenureYears: 1, accrualPct: "0.022" },
+      { minTenureYears: 2, accrualPct: "0.042" },
+      { minTenureYears: 5, accrualPct: "0.062" },
+    ],
+  });
+  const wcRates = await Promise.all(
+    [
+      { code: "0", description: "EXEMPT", rate: "0" },
+      { code: "5020", description: "Susp Ceiling", rate: "0.019794" },
+      { code: "5022", description: "Masonry", rate: "0.027591" },
+      { code: "5102", description: "Dr & Win", rate: "0.023649" },
+      { code: "5183", description: "Plumbing", rate: "0.014053" },
+      { code: "5190", description: "Electrical", rate: "0.009168" },
+      { code: "5221", description: "Conc & Cem", rate: "0.018765" },
+      { code: "5348", description: "Tile", rate: "0.016023" },
+      { code: "5445", description: "Drywall", rate: "0.027163" },
+      { code: "5474", description: "Painting", rate: "0.022193" },
+      { code: "5478", description: "Crpt & Lam", rate: "0.012596" },
+      { code: "5606", description: "Contractor", rate: "0.004541" },
+      { code: "5645", description: "Carpentry", rate: "0.041472" },
+      { code: "6217", description: "Excavation", rate: "0.017908" },
+      { code: "8810", description: "Clerical", rate: "0.000428" },
+    ].map((data) => prisma.workersCompRate.create({ data })),
+  );
+  const wcByCode = new Map(wcRates.map((wc) => [wc.code, wc]));
+
+  // Distinct burden profiles (v3 spec §F18/§F19, v5 spec job costing) so the
+  // pivot report and "labor as % of revenue" trend render with real
+  // density: an hourly carpenter early in tenure, an hourly electrician
+  // with several years of tenure and benefits, and a salaried foreman with
+  // a full benefits package and a company vehicle.
   const [carpenterEmployee, electricianEmployee, foremanEmployee] = await Promise.all([
     prisma.employee.create({
-      data: { name: "Dave Kowalski", baseRate: "28.00", payrollTaxPct: "0.0765", workersCompPct: "0.09", benefitsPct: "0" },
+      data: {
+        name: "Dave Kowalski",
+        number: "EMP-001",
+        jobTitle: "Carpenter",
+        payType: "hourly",
+        employmentType: "full_time",
+        wcCodeId: wcByCode.get("5645")!.id,
+        startDate: new Date("2023-03-01"),
+        discretionaryPtoHours: "0",
+        currentPay: "28.00",
+        healthInsMonthly: "0",
+        retirementPct: "0",
+        yearlyVehicleValue: "0",
+      },
+      include: { wcCode: true },
     }),
     prisma.employee.create({
-      data: { name: "Marcus Lee", baseRate: "34.00", payrollTaxPct: "0.0765", workersCompPct: "0.14", benefitsPct: "0.06" },
+      data: {
+        name: "Marcus Lee",
+        number: "EMP-002",
+        jobTitle: "Electrician",
+        payType: "hourly",
+        employmentType: "full_time",
+        wcCodeId: wcByCode.get("5190")!.id,
+        startDate: new Date("2020-01-15"),
+        discretionaryPtoHours: "0",
+        currentPay: "34.00",
+        healthInsMonthly: "400.00",
+        retirementPct: "0.03",
+        yearlyVehicleValue: "0",
+      },
+      include: { wcCode: true },
     }),
     prisma.employee.create({
-      data: { name: "Renee Ortiz", baseRate: "38.00", payrollTaxPct: "0.0765", workersCompPct: "0.07", benefitsPct: "0.12" },
+      data: {
+        name: "Renee Ortiz",
+        number: "EMP-003",
+        jobTitle: "Foreman",
+        payType: "salary",
+        employmentType: "full_time",
+        wcCodeId: wcByCode.get("5606")!.id,
+        startDate: new Date("2019-06-01"),
+        discretionaryPtoHours: "40",
+        currentPay: "78000.00",
+        healthInsMonthly: "600.00",
+        retirementPct: "0.05",
+        yearlyVehicleValue: "8000.00",
+      },
+      include: { wcCode: true },
     }),
   ]);
 

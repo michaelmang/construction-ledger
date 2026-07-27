@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Decimal from "decimal.js";
 import { useRouter } from "next/navigation";
 import { editLaborCost } from "@/app/actions/labor";
 import { inputClass, primaryButtonClass, Field } from "@/components/form";
 import { FormError } from "@/components/ui/FormError";
-import { laborAmounts, burdenDeltaPct } from "@/lib/labor";
+import { computeLaborBurden, burdenDeltaPct, CompanyAssumptions } from "@/lib/labor-burden";
 import { formatUSD } from "@/lib/money";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
 import { EmployeeOption } from "../../../expenses/new/ExpenseForm";
@@ -30,11 +31,13 @@ export function LaborForm({
   jobId,
   costCodes,
   employees,
+  company,
   initial,
 }: {
   jobId: number;
   costCodes: CostCodeOption[];
   employees: EmployeeOption[];
+  company: CompanyAssumptions;
   initial: LaborInitial;
 }) {
   const router = useRouter();
@@ -54,12 +57,29 @@ export function LaborForm({
   const preview = useMemo(() => {
     if (!selectedEmployee || !hours || Number(hours) <= 0) return null;
     try {
-      const { gross, burdened } = laborAmounts(selectedEmployee, hours);
+      const burden = computeLaborBurden(
+        {
+          payType: selectedEmployee.payType,
+          startDate: new Date(selectedEmployee.startDate ?? selectedEmployee.createdAt),
+          holidayDays: selectedEmployee.holidayDays,
+          discretionaryPtoHours: selectedEmployee.discretionaryPtoHours,
+          currentPay: selectedEmployee.currentPay,
+          healthInsMonthly: selectedEmployee.healthInsMonthly,
+          retirementPct: selectedEmployee.retirementPct,
+          yearlyVehicleValue: selectedEmployee.yearlyVehicleValue,
+          wcRate: selectedEmployee.wcRate,
+        },
+        company,
+        new Date(date || selectedEmployee.createdAt),
+      );
+      const hoursDecimal = new Decimal(hours);
+      const gross = burden.hourlyRate.times(hoursDecimal).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const burdened = burden.hourlyLaborBurden.times(hoursDecimal).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       return { gross, burdened, deltaPct: burdenDeltaPct(gross, burdened) };
     } catch {
       return null;
     }
-  }, [selectedEmployee, hours]);
+  }, [selectedEmployee, hours, date, company]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

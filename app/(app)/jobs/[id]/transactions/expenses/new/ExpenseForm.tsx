@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Decimal from "decimal.js";
 import { useRouter } from "next/navigation";
 import { recordExpense, editExpense } from "@/app/actions/expenses";
 import { recordLaborCost } from "@/app/actions/labor";
@@ -9,7 +10,8 @@ import { inputClass, primaryButtonClass, Field } from "@/components/form";
 import { FormError } from "@/components/ui/FormError";
 import { VendorPicker, VendorOption } from "@/components/VendorPicker";
 import { COST_TYPES, COST_TYPE_LABEL, CostType } from "@/lib/cost-types";
-import { laborAmounts, burdenDeltaPct } from "@/lib/labor";
+import { computeLaborBurden, burdenDeltaPct, CompanyAssumptions } from "@/lib/labor-burden";
+import { EmployeeOption } from "@/lib/queries";
 import { formatUSD } from "@/lib/money";
 import { hapticSuccess, hapticError } from "@/lib/haptics";
 import { todayIso } from "@/lib/date-utc";
@@ -20,14 +22,7 @@ interface CostCodeOption {
   name: string;
 }
 
-export interface EmployeeOption {
-  id: number;
-  name: string;
-  baseRate: string;
-  payrollTaxPct: string;
-  workersCompPct: string;
-  benefitsPct: string;
-}
+export type { EmployeeOption };
 
 export interface ExpenseInitial {
   txnid: string;
@@ -52,12 +47,14 @@ export function ExpenseForm({
   costCodes,
   vendors,
   employees,
+  company,
   initial,
 }: {
   jobId: number;
   costCodes: CostCodeOption[];
   vendors: VendorOption[];
   employees: EmployeeOption[];
+  company: CompanyAssumptions;
   initial?: ExpenseInitial;
 }) {
   const router = useRouter();
@@ -87,13 +84,30 @@ export function ExpenseForm({
   const laborPreview = useMemo(() => {
     if (!selectedEmployee || !hours || Number(hours) <= 0) return null;
     try {
-      const { gross, burdened } = laborAmounts(selectedEmployee, hours);
+      const burden = computeLaborBurden(
+        {
+          payType: selectedEmployee.payType,
+          startDate: new Date(selectedEmployee.startDate ?? selectedEmployee.createdAt),
+          holidayDays: selectedEmployee.holidayDays,
+          discretionaryPtoHours: selectedEmployee.discretionaryPtoHours,
+          currentPay: selectedEmployee.currentPay,
+          healthInsMonthly: selectedEmployee.healthInsMonthly,
+          retirementPct: selectedEmployee.retirementPct,
+          yearlyVehicleValue: selectedEmployee.yearlyVehicleValue,
+          wcRate: selectedEmployee.wcRate,
+        },
+        company,
+        new Date(date || todayIso()),
+      );
+      const hoursDecimal = new Decimal(hours);
+      const gross = burden.hourlyRate.times(hoursDecimal).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const burdened = burden.hourlyLaborBurden.times(hoursDecimal).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       const deltaPct = burdenDeltaPct(gross, burdened);
       return { gross, burdened, deltaPct };
     } catch {
       return null;
     }
-  }, [selectedEmployee, hours]);
+  }, [selectedEmployee, hours, date, company]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
