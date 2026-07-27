@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
-import { recordTransaction } from "@/lib/transactions";
+import { recordTransaction, removeTransaction } from "@/lib/transactions";
 import {
   accountsPayable,
   accountsReceivable,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/accounts";
 import {
   getWipSchedule,
+  getWipScheduleForActiveJobs,
   getJobProfitability,
   getCostCodeBreakdown,
   getRetainageAging,
@@ -192,6 +193,121 @@ describe("reports (integration, hermetic fixture)", () => {
     expect(carpentry.estimatedAtCompletion.toFixed(2)).toBe("35000.00");
     expect(carpentry.actual.toFixed(2)).toBe("20000.00");
     expect(carpentry.remaining.toFixed(2)).toBe("15000.00");
+  });
+
+  // v6 spec (report filters): "as of" a date recomputes the whole cumulative
+  // snapshot using only transactions on/before that date. Fixture reminder:
+  // expense1 $10,000 on 2026-06-01, expense2 $20,000 on 2026-07-31, billing
+  // $35,000 on 2026-06-24, and the $5,000 change order has no approvedDate
+  // set at all.
+  it("'as of' a date excludes transactions/billings dated after the boundary", async () => {
+    const asOf = new Date("2026-06-24T00:00:00Z");
+    const report = await getWipSchedule(jobId, { asOf });
+    // expense2 (2026-07-31) is excluded; only expense1 remains.
+    expect(report.wip.costsToDate.toFixed(2)).toBe("10000.00");
+    // The billing is dated exactly on the boundary -> included (inclusive).
+    expect(report.wip.billedToDate.toFixed(2)).toBe("35000.00");
+    // The change order has no approvedDate -> excluded from an "as of" view;
+    // an undated CO can't be placed on one side of the cutoff.
+    expect(report.wip.revisedContractValue.toFixed(2)).toBe("100000.00");
+
+    const laterAsOf = new Date("2026-07-31T00:00:00Z");
+    const laterReport = await getWipSchedule(jobId, { asOf: laterAsOf });
+    expect(laterReport.wip.costsToDate.toFixed(2)).toBe("30000.00");
+  });
+
+  it("getCostCodeBreakdown's actual column respects asOf the same way", async () => {
+    const rows = await getCostCodeBreakdown(jobId, { asOf: new Date("2026-06-24T00:00:00Z") });
+    const concrete = rows.find((r) => r.costCode === "03-CONCRETE")!;
+    const carpentry = rows.find((r) => r.costCode === "06-CARPENTRY")!;
+    expect(concrete.actual.toFixed(2)).toBe("10000.00");
+    expect(carpentry.actual.toFixed(2)).toBe("0.00"); // expense2 (2026-07-31) excluded
+  });
+
+  it("jobId narrows getWipScheduleForActiveJobs to one job", async () => {
+    const otherJob = await prisma.job.create({
+      data: { code: `TEST-WIP-OTHER-${Date.now()}`, name: "Other Job" },
+    });
+    try {
+      const rows = await getWipScheduleForActiveJobs(["active"], { jobId });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].jobId).toBe(jobId);
+    } finally {
+      await prisma.job.delete({ where: { id: otherJob.id } });
+    }
+  });
+
+  // Own self-contained fixture (the shared one above never tags a costtype)
+  // so this can prove costTypes narrows Costs to Date to just the selected
+  // type(s) while Estimated Total Cost stays whole-job — JobBudget rows
+  // aren't cost-type-scoped, so there's no per-type budget to narrow.
+  it("costTypes narrows WIP's Costs to Date, leaving Estimated Total Cost whole-job", async () => {
+    const ctJobCode = `TEST-CT-${Date.now()}`;
+    const ctJob = await prisma.job.create({
+      data: { code: ctJobCode, name: "Cost Type Fixture Job", contractValue: "10000.00" },
+    });
+    const cc = await prisma.costCode.upsert({
+      where: { code: "03-CONCRETE" },
+      update: {},
+      create: { code: "03-CONCRETE", name: "Concrete" },
+    });
+    await prisma.jobBudget.create({
+      data: { jobId: ctJob.id, costCodeId: cc.id, budgetedAmount: "5000.00" },
+    });
+
+    const laborAmt = new Decimal("1000.00");
+    const laborTxn = await recordTransaction(
+      {
+        kind: "labor",
+        jobId: ctJob.id,
+        date: "2026-06-01",
+        description: "fixture labor",
+        tags: { job: ctJobCode, code: "03-CONCRETE", costtype: "labor" },
+        postings: [
+          { account: expenseJobCostCode(ctJobCode, "03-CONCRETE"), amount: laborAmt },
+          { account: accountsPayable("labor-vendor"), amount: laborAmt.negated() },
+        ],
+        amount: laborAmt,
+      },
+      "fixture: labor",
+    );
+    const materialAmt = new Decimal("2000.00");
+    const materialTxn = await recordTransaction(
+      {
+        kind: "expense",
+        jobId: ctJob.id,
+        date: "2026-06-02",
+        description: "fixture material",
+        tags: { job: ctJobCode, code: "03-CONCRETE", costtype: "material" },
+        postings: [
+          { account: expenseJobCostCode(ctJobCode, "03-CONCRETE"), amount: materialAmt },
+          { account: accountsPayable("material-vendor"), amount: materialAmt.negated() },
+        ],
+        amount: materialAmt,
+      },
+      "fixture: material",
+    );
+
+    try {
+      const laborOnly = await getWipSchedule(ctJob.id, { costTypes: ["labor"] });
+      expect(laborOnly.wip.costsToDate.toFixed(2)).toBe("1000.00");
+      expect(laborOnly.wip.estimatedTotalCost.toFixed(2)).toBe("5000.00");
+
+      const both = await getWipSchedule(ctJob.id, { costTypes: ["labor", "material"] });
+      expect(both.wip.costsToDate.toFixed(2)).toBe("3000.00");
+
+      const unfiltered = await getWipSchedule(ctJob.id);
+      expect(unfiltered.wip.costsToDate.toFixed(2)).toBe("3000.00");
+    } finally {
+      // removeTransaction reverts the journal postings themselves (not just
+      // the Prisma-side JournalTxn row) — this describe block's journalDir
+      // is shared across every it() here, and the later whole-business cash
+      // position test would otherwise pick up these postings.
+      await removeTransaction(laborTxn.txnid, "cleanup: fixture labor");
+      await removeTransaction(materialTxn.txnid, "cleanup: fixture material");
+      await prisma.jobBudget.deleteMany({ where: { jobId: ctJob.id } });
+      await prisma.job.delete({ where: { id: ctJob.id } });
+    }
   });
 
   it("reports retainage receivable balance (client-withheld) and days outstanding", async () => {

@@ -1,11 +1,19 @@
+import { NextRequest } from "next/server";
 import { getWipScheduleForActiveJobs } from "@/lib/reports";
+import { parseReportFilters } from "@/lib/report-filters";
 import { toCsv } from "@/lib/csv";
 
 // Fans out one hledger call per active/complete job.
 export const maxDuration = 30;
 
-export async function GET() {
-  const rows = await getWipScheduleForActiveJobs(["active", "complete"]);
+export async function GET(request: NextRequest) {
+  const sp = request.nextUrl.searchParams;
+  const filters = parseReportFilters({
+    jobId: sp.get("jobId") ?? undefined,
+    asOf: sp.get("asOf") ?? undefined,
+    costType: sp.getAll("costType"),
+  });
+  const rows = await getWipScheduleForActiveJobs(["active", "complete"], filters);
 
   const csv = toCsv(
     [

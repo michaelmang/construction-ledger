@@ -12,6 +12,11 @@ const reports = [
     description: "Projected margin and actual margin to date for every active job.",
   },
   {
+    href: "/reports/cost-by-code",
+    title: "Cost by Code",
+    description: "One job's cost codes as rows — budget, cost to date, % complete, remaining.",
+  },
+  {
     href: "/reports/retainage",
     title: "Retainage Aging",
     description: "What's withheld on each progress billing, and how long it's been outstanding.",

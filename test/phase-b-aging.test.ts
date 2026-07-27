@@ -199,4 +199,53 @@ describe("Phase B: AR/AP aging reconciles with hledger balances (v2 spec ยงF10/ย
 
     expect(await check()).toBeNull();
   });
+
+  // v6 spec (report filters): jobId narrows AP aging to one job's bills,
+  // dropping bills tied to other jobs (and overhead bills, which have no
+  // jobId at all).
+  it("jobId narrows AP aging to just that job's bills", async () => {
+    const jobA = await createJob({ code: `AP-JOBID-A-${Date.now()}`, name: "AP JobId A" });
+    if (!jobA.ok) return;
+    cleanupJobIds.push(jobA.data.id);
+    const jobB = await createJob({ code: `AP-JOBID-B-${Date.now()}`, name: "AP JobId B" });
+    if (!jobB.ok) return;
+    cleanupJobIds.push(jobB.data.id);
+    const costCode = await createCostCode({ code: `AP-JOBID-CC-${Date.now()}`, name: "Test" });
+    if (!costCode.ok) return;
+    cleanupCostCodeIds.push(costCode.data.id);
+    const vendor = await createVendor({ name: `AP JobId Vendor ${Date.now()}` });
+    if (!vendor.ok) return;
+    cleanupVendorIds.push(vendor.data.id);
+
+    const expenseA = await recordExpense({
+      jobId: jobA.data.id,
+      costCodeId: costCode.data.id,
+      vendorId: vendor.data.id,
+      costType: "material",
+      amount: "1000.00",
+      date: "2026-06-01",
+    });
+    expect(expenseA.ok).toBe(true);
+    if (!expenseA.ok) return;
+    cleanupTxnids.push(expenseA.data.txnid);
+
+    const expenseB = await recordExpense({
+      jobId: jobB.data.id,
+      costCodeId: costCode.data.id,
+      vendorId: vendor.data.id,
+      costType: "material",
+      amount: "2000.00",
+      date: "2026-06-01",
+    });
+    expect(expenseB.ok).toBe(true);
+    if (!expenseB.ok) return;
+    cleanupTxnids.push(expenseB.data.txnid);
+
+    const billA = await prisma.bill.findUnique({ where: { txnid: expenseA.data.txnid } });
+    const billB = await prisma.bill.findUnique({ where: { txnid: expenseB.data.txnid } });
+
+    const jobAAging = await getApAging(new Date(), jobA.data.id);
+    expect(jobAAging.some((r) => r.billId === billA!.id)).toBe(true);
+    expect(jobAAging.some((r) => r.billId === billB!.id)).toBe(false);
+  });
 });

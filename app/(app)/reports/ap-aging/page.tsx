@@ -1,15 +1,29 @@
 import { getApAging } from "@/lib/reports";
+import { listJobs } from "@/lib/queries";
+import { parseReportFilters, reportFilterQueryString, ReportFilterParams } from "@/lib/report-filters";
+import { ReportFilterBar } from "@/components/reports/ReportFilterBar";
 import { Money } from "@/components/Money";
 
-export default async function ApAgingReportPage() {
-  const rows = await getApAging();
+export const dynamic = "force-dynamic";
+
+export default async function ApAgingReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<ReportFilterParams>;
+}) {
+  const raw = await searchParams;
+  const filters = parseReportFilters(raw);
+  const asOf = filters.asOf ?? new Date();
+  const [rows, jobsRaw] = await Promise.all([getApAging(asOf, filters.jobId), listJobs()]);
+  const jobs = jobsRaw.map((j) => ({ id: j.id, code: j.code, name: j.name }));
+  const csvHref = `/api/reports/ap-aging${reportFilterQueryString(raw)}`;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">AP Aging</h1>
         <a
-          href="/api/reports/ap-aging"
+          href={csvHref}
           className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-surface-2"
         >
           Download CSV
@@ -19,6 +33,13 @@ export default async function ApAgingReportPage() {
         What&apos;s still owed on every open vendor bill, net of retainage withheld and
         payments already made.
       </p>
+
+      <ReportFilterBar basePath="/reports/ap-aging" jobs={jobs} raw={raw} />
+      {filters.jobId && (
+        <p className="text-xs text-text-3">
+          Filtered to this job&apos;s bills — overhead bills (not tied to any job) are hidden.
+        </p>
+      )}
 
       {rows.length === 0 ? (
         <p className="text-text-3">Nothing outstanding.</p>

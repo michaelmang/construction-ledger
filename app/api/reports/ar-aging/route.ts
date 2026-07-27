@@ -1,8 +1,16 @@
+import { NextRequest } from "next/server";
 import { getArAgingForActiveJobs } from "@/lib/reports";
+import { parseReportFilters } from "@/lib/report-filters";
 import { toCsv } from "@/lib/csv";
 
-export async function GET() {
-  const reports = await getArAgingForActiveJobs(new Date(), ["active", "complete"]);
+export async function GET(request: NextRequest) {
+  const sp = request.nextUrl.searchParams;
+  const filters = parseReportFilters({
+    jobId: sp.get("jobId") ?? undefined,
+    asOf: sp.get("asOf") ?? undefined,
+  });
+  const asOf = filters.asOf ?? new Date();
+  const reports = await getArAgingForActiveJobs(asOf, ["active", "complete"], filters.jobId);
   const rows = reports.flatMap((r) =>
     r.rows.map((row) => [
       r.jobCode,

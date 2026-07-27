@@ -1,11 +1,19 @@
+import { NextRequest } from "next/server";
 import { getRetainageAgingForActiveJobs } from "@/lib/reports";
+import { parseReportFilters } from "@/lib/report-filters";
 import { toCsv } from "@/lib/csv";
 
 // Fans out two hledger balance calls per active/complete job.
 export const maxDuration = 30;
 
-export async function GET() {
-  const reports = await getRetainageAgingForActiveJobs(new Date(), ["active", "complete"]);
+export async function GET(request: NextRequest) {
+  const sp = request.nextUrl.searchParams;
+  const filters = parseReportFilters({
+    jobId: sp.get("jobId") ?? undefined,
+    asOf: sp.get("asOf") ?? undefined,
+  });
+  const asOf = filters.asOf ?? new Date();
+  const reports = await getRetainageAgingForActiveJobs(asOf, ["active", "complete"], filters.jobId);
   const rows = reports.flatMap((r) =>
     r.billings.map((b) => [
       r.jobCode,

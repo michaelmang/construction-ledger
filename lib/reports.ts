@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import { prisma } from "./db";
 import { balance, BalanceLine } from "./hledger";
 import { COST_TYPES } from "./cost-types";
+import { ReportFilterOptions } from "./report-filters";
 import {
   computeWipSchedule,
   computeJobProfitability,
@@ -29,43 +30,79 @@ function toDecimal(value: unknown): Decimal {
   return new Decimal(value === null || value === undefined ? 0 : String(value));
 }
 
-async function costsToDateLines(jobCode: string): Promise<{ total: Decimal; lines: BalanceLine[] }> {
-  const { lines, total } = await balance([`tag:job=${jobCode}`, "type:x"]);
-  return { total, lines };
+// "As of" a date (v6 spec: report filters) means only transactions on/before
+// that date count. hledger's `date:-DATE` upper bound is exclusive, so the
+// boundary is the day after — same convention getJobCostTrend/getCashTrend
+// already use below. `toHledgerDateArg`/`addUtcDays` are hoisted (function
+// declaration / top-level import), safe to call from here despite being
+// defined further down the file.
+function asOfQueryTerm(asOf?: Date): string[] {
+  return asOf ? [`date:-${toHledgerDateArg(addUtcDays(asOf, 1))}`] : [];
 }
 
+async function costsToDateLines(
+  jobCode: string,
+  opts: Pick<ReportFilterOptions, "asOf" | "costTypes"> = {},
+): Promise<{ total: Decimal; lines: BalanceLine[] }> {
+  const dateTerm = asOfQueryTerm(opts.asOf);
+  if (!opts.costTypes || opts.costTypes.length === 0) {
+    const { lines, total } = await balance([`tag:job=${jobCode}`, "type:x", ...dateTerm]);
+    return { total, lines };
+  }
+  // Cost-type filter: sum only the selected types, one balance() call per
+  // type (same approach costTypeAmountsForJob already uses below) — never
+  // silently include untyped/other-type costs.
+  const perType = await Promise.all(
+    opts.costTypes.map((t) =>
+      balance([`tag:job=${jobCode}`, `tag:costtype=${t}`, "type:x", ...dateTerm]),
+    ),
+  );
+  return {
+    total: perType.reduce((sum, r) => sum.plus(r.total), new Decimal(0)),
+    lines: perType.flatMap((r) => r.lines),
+  };
+}
+
+// Accumulates rather than overwrites — costsToDateLines can merge several
+// per-cost-type balance() calls when a cost-type filter is active, so the
+// same cost-code account can legitimately appear more than once in `lines`.
 function costByCostCode(jobCode: string, lines: BalanceLine[]): Map<string, Decimal> {
   const prefix = `expenses:jobs:${jobCode}:`;
   const map = new Map<string, Decimal>();
   for (const line of lines) {
     if (line.account.startsWith(prefix)) {
-      map.set(line.account.slice(prefix.length), line.amount);
+      const code = line.account.slice(prefix.length);
+      map.set(code, (map.get(code) ?? new Decimal(0)).plus(line.amount));
     }
   }
   return map;
 }
 
-export async function billedToDate(jobId: number): Promise<Decimal> {
+// `asOf` omitted preserves exact prior behavior (sums every billing
+// regardless of date). When set, a null billingDate row is excluded — an
+// undated billing can't be placed on one side of an "as of" cutoff.
+export async function billedToDate(jobId: number, asOf?: Date): Promise<Decimal> {
   const agg = await prisma.progressBilling.aggregate({
-    where: { jobId },
+    where: { jobId, ...(asOf ? { billingDate: { lte: asOf } } : {}) },
     _sum: { amountBilled: true },
   });
   return toDecimal(agg._sum.amountBilled);
 }
 
-export async function approvedChangeOrdersTotal(jobId: number): Promise<Decimal> {
+export async function approvedChangeOrdersTotal(jobId: number, asOf?: Date): Promise<Decimal> {
   const agg = await prisma.changeOrder.aggregate({
-    where: { jobId, status: "approved" },
+    where: { jobId, status: "approved", ...(asOf ? { approvedDate: { lte: asOf } } : {}) },
     _sum: { amount: true },
   });
   return toDecimal(agg._sum.amount);
 }
 
 // Contract value + approved change orders. Used both by the WIP schedule and
-// by the over-billing warning check in app/actions/billings.ts.
-export async function getRevisedContractValue(jobId: number): Promise<Decimal> {
+// by the over-billing warning check in app/actions/billings.ts (which never
+// passes asOf, so its behavior is unchanged).
+export async function getRevisedContractValue(jobId: number, asOf?: Date): Promise<Decimal> {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
-  return toDecimal(job.contractValue).plus(await approvedChangeOrdersTotal(jobId));
+  return toDecimal(job.contractValue).plus(await approvedChangeOrdersTotal(jobId, asOf));
 }
 
 async function jobBudgetsWithActuals(jobId: number, jobCode: string, costLines: BalanceLine[]) {
@@ -92,26 +129,38 @@ export interface JobWipReport {
   cfoPctCompleteEstimate: Decimal | null; // from the most recent billing, informational only (v2 spec §F4)
 }
 
-async function latestCfoPctCompleteEstimate(jobId: number): Promise<Decimal | null> {
+async function latestCfoPctCompleteEstimate(jobId: number, asOf?: Date): Promise<Decimal | null> {
   const latest = await prisma.progressBilling.findFirst({
-    where: { jobId, pctCompleteEstimate: { not: null } },
+    where: {
+      jobId,
+      pctCompleteEstimate: { not: null },
+      ...(asOf ? { billingDate: { lte: asOf } } : {}),
+    },
     orderBy: { billingDate: "desc" },
   });
   return latest?.pctCompleteEstimate ? toDecimal(latest.pctCompleteEstimate) : null;
 }
 
-export async function getWipSchedule(jobId: number): Promise<JobWipReport> {
+// `opts` (v6 spec: report filters) is optional everywhere below and
+// defaults preserve exact prior behavior — `estimatedTotalCost` never
+// varies with `opts` since JobBudget rows aren't dated or cost-type-scoped
+// (there's no "budget as of a past date" or "budget for just Labor" to
+// reconstruct); only costsToDate/billedToDate/earnedRevenue move.
+export async function getWipSchedule(
+  jobId: number,
+  opts: ReportFilterOptions = {},
+): Promise<JobWipReport> {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
-  const { total: costsToDate, lines } = await costsToDateLines(job.code);
+  const { total: costsToDate, lines } = await costsToDateLines(job.code, opts);
   const budgets = await jobBudgetsWithActuals(job.id, job.code, lines);
   const estimatedTotalCost = computeEstimatedTotalCost(budgets);
 
   const wip = computeWipSchedule({
     contractValue: toDecimal(job.contractValue),
-    approvedChangeOrdersTotal: await approvedChangeOrdersTotal(job.id),
+    approvedChangeOrdersTotal: await approvedChangeOrdersTotal(job.id, opts.asOf),
     costsToDate,
     estimatedTotalCost,
-    billedToDate: await billedToDate(job.id),
+    billedToDate: await billedToDate(job.id, opts.asOf),
   });
 
   return {
@@ -119,48 +168,63 @@ export async function getWipSchedule(jobId: number): Promise<JobWipReport> {
     jobCode: job.code,
     jobName: job.name,
     wip,
-    cfoPctCompleteEstimate: await latestCfoPctCompleteEstimate(job.id),
+    cfoPctCompleteEstimate: await latestCfoPctCompleteEstimate(job.id, opts.asOf),
   };
 }
 
 // Defaults to active-only for the dashboard; report pages pass
 // ["active", "complete"] so closed jobs stay reviewable without cluttering
-// the dashboard (v2 spec §F12).
+// the dashboard (v2 spec §F12). `opts.jobId` narrows to one job (v6 spec).
 export async function getWipScheduleForActiveJobs(
   statuses: string[] = ["active"],
+  opts: ReportFilterOptions = {},
 ): Promise<JobWipReport[]> {
-  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
-  return Promise.all(jobs.map((j) => getWipSchedule(j.id)));
+  const jobs = await prisma.job.findMany({
+    where: { status: { in: statuses }, ...(opts.jobId ? { id: opts.jobId } : {}) },
+  });
+  return Promise.all(jobs.map((j) => getWipSchedule(j.id, opts)));
 }
 
 export interface JobProfitabilityReport extends JobWipReport {
   profitability: JobProfitabilityResult;
 }
 
-export async function getJobProfitability(jobId: number): Promise<JobProfitabilityReport> {
-  const report = await getWipSchedule(jobId);
+export async function getJobProfitability(
+  jobId: number,
+  opts: ReportFilterOptions = {},
+): Promise<JobProfitabilityReport> {
+  const report = await getWipSchedule(jobId, opts);
   const profitability = computeJobProfitability(report.wip);
   return { ...report, profitability };
 }
 
 export async function getProfitabilityForActiveJobs(
   statuses: string[] = ["active"],
+  opts: ReportFilterOptions = {},
 ): Promise<JobProfitabilityReport[]> {
-  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
-  return Promise.all(jobs.map((j) => getJobProfitability(j.id)));
+  const jobs = await prisma.job.findMany({
+    where: { status: { in: statuses }, ...(opts.jobId ? { id: opts.jobId } : {}) },
+  });
+  return Promise.all(jobs.map((j) => getJobProfitability(j.id, opts)));
 }
 
 export async function getRetainageAgingForActiveJobs(
   asOf: Date = new Date(),
   statuses: string[] = ["active"],
+  jobId?: number,
 ): Promise<RetainageAgingReport[]> {
-  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
+  const jobs = await prisma.job.findMany({
+    where: { status: { in: statuses }, ...(jobId ? { id: jobId } : {}) },
+  });
   return Promise.all(jobs.map((j) => getRetainageAging(j.id, asOf)));
 }
 
-export async function getCostCodeBreakdown(jobId: number): Promise<CostCodeBreakdownRow[]> {
+export async function getCostCodeBreakdown(
+  jobId: number,
+  opts: ReportFilterOptions = {},
+): Promise<CostCodeBreakdownRow[]> {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
-  const { lines } = await costsToDateLines(job.code);
+  const { lines } = await costsToDateLines(job.code, opts);
   const budgets = await jobBudgetsWithActuals(job.id, job.code, lines);
   return computeCostCodeBreakdown(budgets);
 }
@@ -180,11 +244,15 @@ interface CostTypeAccountAmount {
 // with no costtype tag at all, queried via `not:tag:costtype`) — cheap at
 // this app's scale, and keeps each call a simple account-balance query
 // rather than parsing `print` output (v3 build instructions Phase 3).
-async function costTypeAmountsForJob(jobCode: string): Promise<CostTypeAccountAmount[]> {
+async function costTypeAmountsForJob(jobCode: string, asOf?: Date): Promise<CostTypeAccountAmount[]> {
+  const dateTerm = asOfQueryTerm(asOf);
   const perType = await Promise.all(
-    COST_TYPES.map(async (t) => ({ type: t, lines: (await balance([`tag:job=${jobCode}`, `tag:costtype=${t}`, "type:x"])).lines })),
+    COST_TYPES.map(async (t) => ({
+      type: t,
+      lines: (await balance([`tag:job=${jobCode}`, `tag:costtype=${t}`, "type:x", ...dateTerm])).lines,
+    })),
   );
-  const untyped = await balance([`tag:job=${jobCode}`, "not:tag:costtype", "type:x"]);
+  const untyped = await balance([`tag:job=${jobCode}`, "not:tag:costtype", "type:x", ...dateTerm]);
 
   const prefix = `expenses:jobs:${jobCode}:`;
   const amounts: CostTypeAccountAmount[] = [];
@@ -202,10 +270,10 @@ async function costTypeAmountsForJob(jobCode: string): Promise<CostTypeAccountAm
 // Cost code x cost type pivot for a single job's Cost Codes tab (v3 spec
 // §F17/§F19). Only cost codes with a JobBudget row appear, matching
 // getCostCodeBreakdown's existing convention.
-export async function getCostTypePivotForJob(jobId: number): Promise<CostTypePivotRow[]> {
+export async function getCostTypePivotForJob(jobId: number, asOf?: Date): Promise<CostTypePivotRow[]> {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId } });
   const budgets = await prisma.jobBudget.findMany({ where: { jobId }, include: { costCode: true } });
-  const raw = await costTypeAmountsForJob(job.code);
+  const raw = await costTypeAmountsForJob(job.code, asOf);
 
   const idByCode = new Map(budgets.map((b) => [b.costCode.code, b.costCodeId]));
   const amounts: CostTypePivotAmount[] = raw
@@ -229,15 +297,22 @@ export async function getCostTypePivotForJob(jobId: number): Promise<CostTypePiv
 // total, not 6 per job.
 export async function getCostTypePivotByJob(
   statuses: string[] = ["active", "complete"],
+  opts: Pick<ReportFilterOptions, "asOf" | "jobId"> = {},
 ): Promise<JobCostTypePivotRow[]> {
-  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
+  const jobs = await prisma.job.findMany({
+    where: { status: { in: statuses }, ...(opts.jobId ? { id: opts.jobId } : {}) },
+  });
   const jobByCode = new Map(jobs.map((j) => [j.code, j]));
   const jobAccountRe = /^expenses:jobs:([^:]+):/;
+  const dateTerm = asOfQueryTerm(opts.asOf);
 
   const perType = await Promise.all(
-    COST_TYPES.map(async (t) => ({ type: t, lines: (await balance([`tag:costtype=${t}`, "type:x"])).lines })),
+    COST_TYPES.map(async (t) => ({
+      type: t,
+      lines: (await balance([`tag:costtype=${t}`, "type:x", ...dateTerm])).lines,
+    })),
   );
-  const untyped = await balance(["not:tag:costtype", "type:x"]);
+  const untyped = await balance(["not:tag:costtype", "type:x", ...dateTerm]);
 
   const amounts: CostTypePivotAmount[] = [];
   function collect(lines: BalanceLine[], costType: CostTypeBucket) {
@@ -515,17 +590,22 @@ export async function getArAging(jobId: number, asOf: Date = new Date()): Promis
 export async function getArAgingForActiveJobs(
   asOf: Date = new Date(),
   statuses: string[] = ["active"],
+  jobId?: number,
 ): Promise<JobArAgingReport[]> {
-  const jobs = await prisma.job.findMany({ where: { status: { in: statuses } } });
+  const jobs = await prisma.job.findMany({
+    where: { status: { in: statuses }, ...(jobId ? { id: jobId } : {}) },
+  });
   return Promise.all(jobs.map((j) => getArAging(j.id, asOf)));
 }
 
 // Whole-business AP aging: what's still owed on every open/partial bill
 // (job-cost and overhead alike), net of retainage withheld and payments made
-// (v2 spec §F6).
-export async function getApAging(asOf: Date = new Date()): Promise<ApAgingRow[]> {
+// (v2 spec §F6). `jobId` (v6 spec: report filters) narrows to one job's
+// bills — overhead bills (jobId: null) drop out of a job-filtered view,
+// since they aren't tied to any job by definition.
+export async function getApAging(asOf: Date = new Date(), jobId?: number): Promise<ApAgingRow[]> {
   const bills = await prisma.bill.findMany({
-    where: { status: { in: ["open", "partial"] } },
+    where: { status: { in: ["open", "partial"] }, ...(jobId ? { jobId } : {}) },
     include: { vendor: true },
   });
 

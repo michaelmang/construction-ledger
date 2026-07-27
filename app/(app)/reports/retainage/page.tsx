@@ -1,18 +1,30 @@
 import Link from "next/link";
 import { getRetainageAgingForActiveJobs } from "@/lib/reports";
-import { listCashAccounts } from "@/lib/queries";
+import { listCashAccounts, listJobs } from "@/lib/queries";
+import { parseReportFilters, reportFilterQueryString, ReportFilterParams } from "@/lib/report-filters";
+import { ReportFilterBar } from "@/components/reports/ReportFilterBar";
 import { Money } from "@/components/Money";
 import { ReleaseRetainageForm } from "./ReleaseRetainageForm";
 
 // Fans out two hledger balance calls per active/complete job.
 export const maxDuration = 30;
+export const dynamic = "force-dynamic";
 
-export default async function RetainageReportPage() {
-  const [reports, cashAccountsRaw] = await Promise.all([
-    getRetainageAgingForActiveJobs(new Date(), ["active", "complete"]),
+export default async function RetainageReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<ReportFilterParams>;
+}) {
+  const raw = await searchParams;
+  const filters = parseReportFilters(raw);
+  const asOf = filters.asOf ?? new Date();
+  const [reports, cashAccountsRaw, jobsRaw] = await Promise.all([
+    getRetainageAgingForActiveJobs(asOf, ["active", "complete"], filters.jobId),
     listCashAccounts(),
+    listJobs(),
   ]);
   const cashAccounts = cashAccountsRaw.map((a) => ({ name: a.name, label: a.label, isDefault: a.isDefault }));
+  const jobs = jobsRaw.map((j) => ({ id: j.id, code: j.code, name: j.name }));
   const rows = reports.flatMap((r) =>
     r.billings.map((b) => ({
       jobId: r.jobId,
@@ -21,18 +33,21 @@ export default async function RetainageReportPage() {
       ...b,
     })),
   );
+  const csvHref = `/api/reports/retainage${reportFilterQueryString(raw)}`;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Retainage Aging</h1>
         <a
-          href="/api/reports/retainage"
+          href={csvHref}
           className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text-2 hover:bg-surface-2"
         >
           Download CSV
         </a>
       </div>
+
+      <ReportFilterBar basePath="/reports/retainage" jobs={jobs} raw={raw} />
 
       <div className="grid gap-4 sm:grid-cols-3">
         {reports.map((r) => (
