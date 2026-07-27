@@ -34,6 +34,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - run: npx tsx scripts/fetch-hledger.ts
       - run: npx tsc --noEmit
       - run: npx eslint .
       - run: npx prisma migrate deploy
@@ -75,6 +76,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - run: npx tsx scripts/fetch-hledger.ts
       - run: npx playwright install --with-deps chromium
       - run: npx prisma migrate deploy
       - run: npm run seed:demo

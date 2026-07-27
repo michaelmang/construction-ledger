@@ -25,11 +25,15 @@ function mainJournalPath(): string {
 // their exec bit in transit. Copying to /tmp (writable) and chmod'ing there
 // once per container sidesteps both problems instead of hoping the bundled
 // copy is directly executable in place. Cached at module scope so this only
-// runs once per warm container, not once per request.
+// runs once per warm container, not once per request. GitHub Actions
+// runners hit the same "no hledger on PATH" problem as Vercel (no Homebrew,
+// no package manager install), so CI runs the same fetch-hledger.ts step
+// and this picks up the vendored binary there too — process.cwd() is just
+// the repo root on a runner, so the same bin/hledger/ path resolves.
 let hledgerBinaryPathPromise: Promise<string> | null = null;
 
 async function hledgerBinaryPath(): Promise<string> {
-  if (!process.env.VERCEL) return "hledger"; // local dev — PATH lookup, Homebrew install
+  if (!process.env.VERCEL && !process.env.CI) return "hledger"; // local dev — PATH lookup, Homebrew install
 
   if (!hledgerBinaryPathPromise) {
     hledgerBinaryPathPromise = (async () => {
