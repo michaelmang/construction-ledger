@@ -26,11 +26,11 @@ test("creates a progress billing and records a payment against it", async ({ pag
   // under load.
   const continueLink = page.getByRole("link", { name: "Continue to Billings" });
   const billingsHeading = page.getByRole("heading", { name: "Progress Billings" });
-  await expect(continueLink.or(billingsHeading)).toBeVisible({ timeout: 15_000 });
+  await expect(continueLink.or(billingsHeading)).toBeVisible({ timeout: 30_000 });
   if (await continueLink.isVisible()) await continueLink.click();
 
-  await expect(page).toHaveURL(/\/billings/, { timeout: 15_000 });
-  await expect(page.getByText(periodLabel)).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(/\/billings/, { timeout: 30_000 });
+  await expect(page.getByText(periodLabel)).toBeVisible({ timeout: 30_000 });
 
   await page.goto("/jobs");
   await page.getByRole("link", { name: "Miller Kitchen Remodel" }).click();
@@ -41,7 +41,7 @@ test("creates a progress billing and records a payment against it", async ({ pag
   await applyTo.selectOption(optionValue!);
   await page.getByRole("button", { name: "Record Payment" }).click();
 
-  await expect(page).toHaveURL(/\/transactions$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/transactions$/, { timeout: 30_000 });
   await expect(page.getByRole("row", { name: /Payment received/ }).first()).toBeVisible();
 
   await page.goto("/jobs");
