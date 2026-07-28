@@ -1,5 +1,5 @@
 {
-  "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then npx prisma migrate deploy; fi && npx prisma generate && npx tsx scripts/fetch-hledger.ts && npx next build",
+  "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1 npx prisma migrate deploy; fi && npx prisma generate && npx tsx scripts/fetch-hledger.ts && npx next build",
   "crons": [
     {
       "path": "/api/cron/snapshot-metadata",
