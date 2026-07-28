@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { ActionResult, ok, fail } from "@/lib/action-result";
 import { requireAdminRole } from "@/lib/authz";
-import { auth } from "@/auth";
+import { auth, signIn } from "@/auth";
 import { inviteUserSchema, revokeUserSchema, InviteUserInput, RevokeUserInput } from "@/lib/validation";
 
 // Invite-only allowlist (V4 spec Phase 1): adding an email here is what
@@ -13,6 +13,12 @@ import { inviteUserSchema, revokeUserSchema, InviteUserInput, RevokeUserInput } 
 // one action; if they've already signed in (a User row exists), their
 // live role is updated too, not just the invite record, so a role change
 // takes effect on their very next request rather than their next sign-in.
+//
+// This is also the only place that actually sends the invite email: it's
+// shared by InviteUserForm (brand-new emails) and UserRoleControl (role
+// edits for people already on the allowlist), so the Resend magic link is
+// only fired when the email wasn't already an AllowedUser row — otherwise
+// every role tweak for an active teammate would re-send them a sign-in link.
 export async function setUserRole(
   input: InviteUserInput,
 ): Promise<ActionResult<{ email: string; role: string }>> {
@@ -23,12 +29,30 @@ export async function setUserRole(
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));
   const data = parsed.data;
 
+  const alreadyInvited = await prisma.allowedUser.findUnique({ where: { email: data.email } });
+
   await prisma.allowedUser.upsert({
     where: { email: data.email },
     create: { email: data.email, role: data.role },
     update: { role: data.role },
   });
   await prisma.user.updateMany({ where: { email: data.email }, data: { role: data.role } });
+
+  if (!alreadyInvited) {
+    // redirect: false so this returns the destination URL instead of
+    // throwing Next's redirect() — @auth/core's signin handler encodes
+    // success/failure (a bad Resend key, etc.) into that URL's query
+    // string rather than throwing, per requestMagicLink's comment above.
+    const redirectUrl = await signIn("resend", {
+      email: data.email,
+      redirectTo: "/dashboard",
+      redirect: false,
+    });
+    if (typeof redirectUrl === "string" && redirectUrl.includes("error=")) {
+      await prisma.allowedUser.delete({ where: { email: data.email } }).catch(() => {});
+      return fail("Couldn't send the invite email. Check the Resend configuration and try again.");
+    }
+  }
 
   revalidatePath("/users");
   return ok({ email: data.email, role: data.role });
