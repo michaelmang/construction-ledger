@@ -21,7 +21,7 @@ test("records, edits, and deletes an expense, all three visible in Activity", as
 
   // A real git commit (isomorphic-git) happens server-side before the
   // redirect — slower than the default 5s expect timeout under load.
-  await expect(page).toHaveURL(/\/transactions$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/transactions$/, { timeout: 30_000 });
   const row = page.getByRole("row", { name: new RegExp(marker) });
   await expect(row).toBeVisible();
   await expect(row.getByText("$321.00", { exact: true })).toBeVisible();
@@ -31,13 +31,19 @@ test("records, edits, and deletes an expense, all three visible in Activity", as
   await page.getByLabel("Amount").fill("450.00");
   await page.getByRole("button", { name: "Save Changes" }).click();
 
-  await expect(page).toHaveURL(/\/transactions$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/transactions$/, { timeout: 30_000 });
   const editedRow = page.getByRole("row", { name: new RegExp(marker) });
   await expect(editedRow.getByText("$450.00", { exact: true })).toBeVisible();
 
   await editedRow.getByRole("button", { name: "Delete" }).click();
   await editedRow.getByRole("button", { name: "Confirm" }).click();
-  await expect(page.getByRole("row", { name: new RegExp(marker) })).toHaveCount(0, { timeout: 15_000 });
+  // A real failure's page snapshot showed the row still reading "Deleting…"
+  // (still in flight, not stuck) at the 30s mark — this is the third
+  // isomorphic-git commit this single test triggers (record, edit,
+  // delete), each serialized through lib/journal-git.ts's write queue, so
+  // it's the one most likely to still be waiting behind the first two
+  // under CI load. Longer headroom here specifically, not a guess.
+  await expect(page.getByRole("row", { name: new RegExp(marker) })).toHaveCount(0, { timeout: 60_000 });
 
   // The Transactions-tab checks above already prove the record/edit/delete
   // sequence worked end to end (row appeared at $321, then $450, then was

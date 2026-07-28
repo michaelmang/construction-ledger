@@ -23,14 +23,21 @@ test("creates a progress billing and records a payment against it", async ({ pag
 
   // A real git commit (isomorphic-git) happens server-side before the
   // redirect/warning screen — slower than the default 5s expect timeout
-  // under load.
+  // under load. Two possible outcomes here: the over-billing warning
+  // screen (stays on /new, shows "Continue to Billings") or a plain
+  // redirect straight to the billings list on success — that list page
+  // has no "Progress Billings" heading anywhere (confirmed against a real
+  // failure's page snapshot: the redirect had already happened and the
+  // new row was already in the table, but this locator never matched
+  // anything on that page), so periodLabel's own text is the real,
+  // reliable signal that the no-warning path landed.
   const continueLink = page.getByRole("link", { name: "Continue to Billings" });
-  const billingsHeading = page.getByRole("heading", { name: "Progress Billings" });
-  await expect(continueLink.or(billingsHeading)).toBeVisible({ timeout: 15_000 });
+  const newRowLanded = page.getByText(periodLabel);
+  await expect(continueLink.or(newRowLanded)).toBeVisible({ timeout: 30_000 });
   if (await continueLink.isVisible()) await continueLink.click();
 
-  await expect(page).toHaveURL(/\/billings/, { timeout: 15_000 });
-  await expect(page.getByText(periodLabel)).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(/\/billings/, { timeout: 30_000 });
+  await expect(page.getByText(periodLabel)).toBeVisible({ timeout: 30_000 });
 
   await page.goto("/jobs");
   await page.getByRole("link", { name: "Miller Kitchen Remodel" }).click();
@@ -41,7 +48,7 @@ test("creates a progress billing and records a payment against it", async ({ pag
   await applyTo.selectOption(optionValue!);
   await page.getByRole("button", { name: "Record Payment" }).click();
 
-  await expect(page).toHaveURL(/\/transactions$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/transactions$/, { timeout: 30_000 });
   await expect(page.getByRole("row", { name: /Payment received/ }).first()).toBeVisible();
 
   await page.goto("/jobs");

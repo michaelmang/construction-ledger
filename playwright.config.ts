@@ -16,7 +16,19 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? "github" : "list",
+  // "github" alone only emits inline annotations — it never writes an HTML
+  // report, so .github/workflows/ci.yml's upload-artifact step (targeting
+  // playwright-report/) had nothing to upload on failure. Pairing it with
+  // "html" (never auto-opened, matching CI's non-interactive context) gives
+  // a real report with screenshots/traces to download next time this fails.
+  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
+  // Default per-test timeout, well above Playwright's 30s default — a
+  // shared GitHub Actions runner is measurably slower than local dev for
+  // the isomorphic-git commits several specs wait on after a mutation, and
+  // expense-lifecycle.spec.ts's delete step alone now waits up to 60s
+  // (evidence: a real failure's page snapshot showed it still mid-flight
+  // at 30s), so the whole-test budget has to comfortably exceed that.
+  timeout: 90_000,
   globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: "http://localhost:3000",
